@@ -1914,16 +1914,6 @@
 	)
 	(wire
 		(pts
-			(xy 59.69 111.76) (xy 57.15 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8a4a342a-7c2e-48de-b4bf-ea002561332b")
-	)
-	(wire
-		(pts
 			(xy 62.23 25.4) (xy 57.15 25.4)
 		)
 		(stroke
@@ -1931,16 +1921,6 @@
 			(type default)
 		)
 		(uuid "9a6a6947-c6c2-496a-ad1f-d52a7f9ad836")
-	)
-	(wire
-		(pts
-			(xy 59.69 114.3) (xy 57.15 114.3)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a0345bae-57e6-42c5-aa5c-6434fb356d6e")
 	)
 	(wire
 		(pts
@@ -1982,16 +1962,6 @@
 		)
 		(uuid "fb0f5c8e-223a-4fb8-a04a-e170fc23a710")
 	)
-	(label "Analog Right Out"
-		(at 59.69 111.76 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "16db5ccc-1edc-4005-8d3d-a4add6d566ec")
-	)
 	(label "DAC Right PWM"
 		(at 59.69 109.22 0)
 		(effects
@@ -2001,16 +1971,6 @@
 			(justify left bottom)
 		)
 		(uuid "dd107f68-0f71-4bb3-8fb8-63206e4bdffa")
-	)
-	(label "DAC Right Off"
-		(at 59.69 114.3 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "eccbb93f-8bc9-490b-a7fa-8cbfe3d31261")
 	)
 	(symbol
 		(lib_id "power:GND")
@@ -2597,7 +2557,7 @@
 		)
 	)
 	(sheet
-		(at 86.36 38.1)
+		(at 99.06 25.4)
 		(size 52.07 12.7)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2613,7 +2573,7 @@
 		)
 		(uuid "1c0b7db5-fb47-467b-b91f-0adacc62fbe2")
 		(property "Sheetname" "DAC P-Channel"
-			(at 86.36 37.3884 0)
+			(at 99.06 24.6884 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -2624,7 +2584,7 @@
 			)
 		)
 		(property "Sheetfile" "dac-pchannel.kicad_sch"
-			(at 86.36 51.3846 0)
+			(at 99.06 38.6846 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -2635,7 +2595,7 @@
 			)
 		)
 		(property "Field2" ""
-			(at 86.36 38.1 0)
+			(at 99.06 25.4 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -2649,52 +2609,6 @@
 			(project "synth"
 				(path "/1e7814a7-1315-4eb0-a9cb-3b93c6dc7966"
 					(page "2")
-				)
-			)
-		)
-	)
-	(sheet
-		(at 86.36 20.32)
-		(size 52.07 12.7)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "e3a18cfe-8277-47c9-9844-e438fa185d8a")
-		(property "Sheetname" "DAC"
-			(at 86.36 19.6084 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "CMOS-ADC.kicad_sch"
-			(at 86.36 33.6046 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-			)
-		)
-		(instances
-			(project "synth"
-				(path "/1e7814a7-1315-4eb0-a9cb-3b93c6dc7966"
-					(page "4")
 				)
 			)
 		)

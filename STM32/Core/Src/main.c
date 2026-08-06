@@ -43,11 +43,22 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+///Highest valid value is 350 for full speaker push, lowest is 0 for full speaker pull.
+///175 is center speaker position.
+typedef uint16_t wavegen_output_t;
+
 const float samplerate = 48000.0f;
-const float audio_power_ratio = 0.1f;
+const float max_pwm_f = 350.0f;
+const float uint8_to_max_pwm = max_pwm_f/255.0f;
 
 struct Waveform{
+  /**
+  This value can be from 0.0 to 1.0, 
+  0.0 indicates begin of waveform cycle, 1.0 indicates end of waveform cycle.
+  It is incremented every 1/48khz with .waveform_completion_increment and wrapped back to 0 if exceeded 1.00.
+  */
 	float waveform_completion_ratio;
+  ///This value should be set as waveform frequency/sample rate.
 	float waveform_completion_increment;
 };
 struct Waveform wave_1 = {0.00, 100.0f/samplerate};
@@ -73,48 +84,42 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void set_audio_output_value(uint16_t value){
-	TIM3->CCR1 = (value >> 8);
+void set_audio_output_value(wavegen_output_t value){
+	TIM3->CCR1 = value;
 }
 
-uint16_t get_sine_point(float waveform_completion_ratio){
+wavegen_output_t get_sine_point(float waveform_completion_ratio){
 	const float completed_waveform_radians = M_PI * 2.0f;
-	const float uint16_maxf = UINT16_MAX;
 	const float make_min_as_zero = 1.0f;
 	const float waveform_max_as_one = 1.0f/2.0f;
-	return (sinf(completed_waveform_radians * waveform_completion_ratio) + make_min_as_zero) * waveform_max_as_one * uint16_maxf * 350.0f/255.0f * audio_power_ratio;
+	return (sinf(completed_waveform_radians*waveform_completion_ratio) + make_min_as_zero) 
+          * waveform_max_as_one * max_pwm_f;
 }
 
-uint16_t get_triangle_point(float waveform_completion_ratio){
-	const float uint16_maxf = UINT16_MAX;
-
+wavegen_output_t get_triangle_point(float waveform_completion_ratio){
 	if(waveform_completion_ratio < 0.25f)
-		return 0.5f + (waveform_completion_ratio * 2.0f) * uint16_maxf * audio_power_ratio * 350.0f/255.0f;
+		return (0.5f + (waveform_completion_ratio*2.0f)) * max_pwm_f;
 	if(waveform_completion_ratio < 0.75f)
-		return 1.5f + (waveform_completion_ratio * -2.0f) * uint16_maxf * audio_power_ratio * 350.0f/255.0f;
-	return -1.5f + (waveform_completion_ratio * 2.0f) * uint16_maxf * audio_power_ratio * 350.0f/255.0f;
+		return (1.5f + (waveform_completion_ratio*-2.0f)) * max_pwm_f;
+	return (-1.5f + (waveform_completion_ratio*2.0f)) * max_pwm_f;
 }
 
-uint16_t get_square_point(float waveform_completion_ratio){
-	return waveform_completion_ratio < 0.5f ? UINT16_MAX : 0;
+wavegen_output_t get_square_point(float waveform_completion_ratio){
+	return (waveform_completion_ratio < 0.5f) ? max_pwm_f : 0;
 }
 
 
-uint16_t (*point_generators[3])(float) = {
+wavegen_output_t (*point_generators[3])(float) = {
   get_sine_point,
   get_triangle_point,
   get_square_point
 };
 
-void next_audio_sample(TIM_HandleTypeDef* htim){
+void next_audio_sample(TIM_HandleTypeDef*){
 	wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
 	if(wave_1.waveform_completion_ratio >= 1.0f)
 		wave_1.waveform_completion_ratio -= 1.0f;
 	set_audio_output_value(point_generators[point_generator_id](wave_1.waveform_completion_ratio));
-}
-
-float get_waveform_completion_increment(float frequency, float samplerate){
-	return frequency / samplerate;
 }
 
 /* USER CODE END 0 */
