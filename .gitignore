@@ -2,4 +2,3 @@ STM32/Drivers
 STM32/Debug
 .metadata
 STM32/STM32F401RCTX_FLASH.ld
-/STM32/Core/Startup

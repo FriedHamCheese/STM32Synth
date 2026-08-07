@@ -71,7 +71,7 @@ float frequencies[] = {
 };
 
 uint8_t frequency_id = 0;
-uint8_t point_generator_id = 0;
+uint8_t point_generator_id = 1;
 
 /* USER CODE END PV */
 
@@ -166,16 +166,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_Delay(2500);
-
-	  const int change_frequency = point_generator_id == 2;
-	  if(!change_frequency){
-		  point_generator_id++;
-		  continue;
-	  }
-	  frequency_id = (frequency_id + 1) % 4;
-	  wave_1.waveform_completion_increment = frequencies[frequency_id] / samplerate;
-	  point_generator_id = 0;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
