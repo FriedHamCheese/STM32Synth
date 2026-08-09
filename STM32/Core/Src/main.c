@@ -49,7 +49,6 @@ typedef uint16_t wavegen_output_t;
 
 const float samplerate = 48000.0f;
 const float max_pwm_f = 350.0f;
-const float uint8_to_max_pwm = max_pwm_f/255.0f;
 
 struct Waveform{
   /**
@@ -61,13 +60,14 @@ struct Waveform{
   ///This value should be set as waveform frequency/sample rate.
 	float waveform_completion_increment;
 };
-struct Waveform wave_1 = {0.00, 100.0f/samplerate};
+struct Waveform wave_1 = {0.00, 500.0f/samplerate};
+struct Waveform wave_2 = {0.00, 200.0f/samplerate};
 
 float frequencies[] = {
-	100.0f,
-	200.0f,
 	500.0f,
-	1000.0f
+	1000.0f,
+	2000.0f,
+	4000.0f
 };
 
 uint8_t frequency_id = 0;
@@ -84,8 +84,9 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void set_audio_output_value(wavegen_output_t value){
-	TIM3->CCR1 = value;
+void set_audio_output_value(wavegen_output_t left_value, wavegen_output_t right_value){
+	TIM3->CCR1 = right_value;
+	TIM3->CCR2 = left_value;
 }
 
 wavegen_output_t get_sine_point(float waveform_completion_ratio){
@@ -117,9 +118,16 @@ wavegen_output_t (*point_generators[3])(float) = {
 
 void next_audio_sample(TIM_HandleTypeDef*){
 	wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
+	wave_2.waveform_completion_ratio += wave_2.waveform_completion_increment;
+
 	if(wave_1.waveform_completion_ratio >= 1.0f)
 		wave_1.waveform_completion_ratio -= 1.0f;
-	set_audio_output_value(point_generators[point_generator_id](wave_1.waveform_completion_ratio));
+	if(wave_2.waveform_completion_ratio >= 1.0f)
+		wave_2.waveform_completion_ratio -= 1.0f;
+
+	set_audio_output_value(
+		get_sine_point(wave_2.waveform_completion_ratio), point_generators[point_generator_id](wave_1.waveform_completion_ratio)
+	);
 }
 
 /* USER CODE END 0 */
@@ -158,8 +166,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_RegisterCallback(&htim4, HAL_TIM_PERIOD_ELAPSED_CB_ID, next_audio_sample);
   HAL_TIM_Base_Start_IT(&htim4);
-  set_audio_output_value(UINT16_MAX / 2);
+  set_audio_output_value(max_pwm_f/2.0f, max_pwm_f/2.0f);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
