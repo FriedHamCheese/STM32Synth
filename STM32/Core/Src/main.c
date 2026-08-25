@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include "touch_sensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -71,7 +72,14 @@ float frequencies[] = {
 };
 
 uint8_t frequency_id = 0;
-uint8_t point_generator_id = 0;
+uint8_t point_generator_id = 1;
+
+/// Touch sensor keys (B6 and B8 — see touch_sensor.h)
+static const TouchPin key_pins[] = {
+    { GPIOB, GPIO_PIN_6 },   // key 1 (B6)
+    { GPIOB, GPIO_PIN_8 },   // key 2 (B8)
+};
+#define NUM_KEYS (sizeof(key_pins) / sizeof(key_pins[0]))
 
 /* USER CODE END PV */
 
@@ -160,6 +168,10 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(UINT16_MAX / 2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+
+  // Touch sensor: enable GPIOB clock + calibrate (fingers away)
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  Touch_Init(key_pins, NUM_KEYS);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -179,6 +191,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint16_t keys = Touch_Scan();
+    // 'keys' bit 0 = key 1 (B6), bit 1 = key 2 (B8)
+    // e.g. use keys to change waveform / frequency here
+    (void)keys;
   }
   /* USER CODE END 3 */
 }
