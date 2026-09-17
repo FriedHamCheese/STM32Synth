@@ -85,8 +85,8 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 
 void set_audio_output_value(wavegen_output_t left_value, wavegen_output_t right_value){
-	TIM3->CCR1 = right_value;
-	TIM3->CCR2 = left_value;
+	TIM2->CCR1 = right_value;
+	TIM2->CCR2 = left_value;
 }
 
 wavegen_output_t get_sine_point(float waveform_completion_ratio){
@@ -161,14 +161,14 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM3_Init();
   MX_TIM4_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_RegisterCallback(&htim4, HAL_TIM_PERIOD_ELAPSED_CB_ID, next_audio_sample);
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(max_pwm_f/2.0f, max_pwm_f/2.0f);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
