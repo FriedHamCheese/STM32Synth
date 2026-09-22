@@ -18,13 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#define _USE_MATH_DEFINES
+#include "waveform.h"
+#include "voice_manager.h"
 #include <math.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,89 +48,146 @@
 /* USER CODE BEGIN PV */
 ///Highest valid value is 350 for full speaker push, lowest is 0 for full speaker pull.
 ///175 is center speaker position.
-typedef uint16_t wavegen_output_t;
 
-const float samplerate = 48000.0f;
-const float max_pwm_f = 350.0f;
+#define AUDIO_SAMPLE_RATE_HZ 48000.0f
+#define ADC_MAX_VALUE        4095.0f
+#define CONTROL_SMOOTHING    0.15f
+#define BUTTON_DEBOUNCE_MS   25U
 
-struct Waveform{
-  /**
-  This value can be from 0.0 to 1.0, 
-  0.0 indicates begin of waveform cycle, 1.0 indicates end of waveform cycle.
-  It is incremented every 1/48khz with .waveform_completion_increment and wrapped back to 0 if exceeded 1.00.
-  */
-	float waveform_completion_ratio;
-  ///This value should be set as waveform frequency/sample rate.
-	float waveform_completion_increment;
-};
-struct Waveform wave_1 = {0.00, 500.0f/samplerate};
-struct Waveform wave_2 = {0.00, 200.0f/samplerate};
-
-float frequencies[] = {
-	500.0f,
-	1000.0f,
-	2000.0f,
-	4000.0f
+WaveformConfig waveform_config =
+{
+    .rise_pct = 0.5f,
+    .fall_pct = 0.5f,
+    .rise_shape = WAVE_SINE,
+    .fall_shape = WAVE_TRIANGLE,
+    .max_output = 350.0f
 };
 
-uint8_t frequency_id = 0;
-uint8_t point_generator_id = 0;
+Waveform wave_1 = { .waveform_completion_ratio = 0.0f,
+                    .waveform_completion_increment = 500.0f / AUDIO_SAMPLE_RATE_HZ };
+Waveform wave_2 = { .waveform_completion_ratio = 0.0f,
+                    .waveform_completion_increment = 200.0f / AUDIO_SAMPLE_RATE_HZ };
+
+typedef struct
+{
+    GPIO_PinState raw_state;
+    GPIO_PinState stable_state;
+    uint32_t changed_at;
+} DebouncedButton;
+
+static DebouncedButton button1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+static DebouncedButton button2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+static float smoothed_rise = 0.5f;
+static float smoothed_fall = 0.5f;
+
+VoiceManager voice_manager;
 
 /* USER CODE END PV */
 
-/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
-/* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 void set_audio_output_value(wavegen_output_t left_value, wavegen_output_t right_value){
 	TIM3->CCR1 = right_value;
 	TIM3->CCR2 = left_value;
 }
 
-wavegen_output_t get_sine_point(float waveform_completion_ratio){
-	const float completed_waveform_radians = M_PI * 2.0f;
-	const float make_min_as_zero = 1.0f;
-	const float waveform_max_as_one = 1.0f/2.0f;
-	return (sinf(completed_waveform_radians*waveform_completion_ratio) + make_min_as_zero) 
-          * waveform_max_as_one * max_pwm_f;
+static void update_one_button(DebouncedButton *button, GPIO_PinState raw,
+                              WaveShape *shape)
+{
+    uint32_t now = HAL_GetTick();
+
+    if (raw != button->raw_state)
+    {
+        button->raw_state = raw;
+        button->changed_at = now;
+    }
+
+    if ((raw != button->stable_state) &&
+        ((now - button->changed_at) >= BUTTON_DEBOUNCE_MS))
+    {
+        button->stable_state = raw;
+        if (button->stable_state == GPIO_PIN_RESET)
+        {
+            *shape = (WaveShape)((*shape + 1U) % 3U);
+        }
+    }
 }
 
-wavegen_output_t get_triangle_point(float waveform_completion_ratio){
-	if(waveform_completion_ratio < 0.25f)
-		return (0.5f + (waveform_completion_ratio*2.0f)) * max_pwm_f;
-	if(waveform_completion_ratio < 0.75f)
-		return (1.5f + (waveform_completion_ratio*-2.0f)) * max_pwm_f;
-	return (-1.5f + (waveform_completion_ratio*2.0f)) * max_pwm_f;
+static uint32_t read_adc_channel(uint32_t channel)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    sConfig.Channel = channel;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
+
+    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+        return 0;
+
+    if (HAL_ADC_Start(&hadc1) != HAL_OK)
+        return 0;
+
+    if (HAL_ADC_PollForConversion(&hadc1, 10U) != HAL_OK)
+    {
+        HAL_ADC_Stop(&hadc1);
+        return 0;
+    }
+
+    uint32_t value = HAL_ADC_GetValue(&hadc1);
+
+    HAL_ADC_Stop(&hadc1);
+
+    return value;
 }
 
-wavegen_output_t get_square_point(float waveform_completion_ratio){
-	return (waveform_completion_ratio < 0.5f) ? max_pwm_f : 0;
+void update_potentiometers(void)
+{
+    uint32_t rise_adc = read_adc_channel(ADC_CHANNEL_0);
+    uint32_t fall_adc = read_adc_channel(ADC_CHANNEL_1);
+
+    smoothed_rise += CONTROL_SMOOTHING *
+                     (((float)rise_adc / ADC_MAX_VALUE) - smoothed_rise);
+
+    smoothed_fall += CONTROL_SMOOTHING *
+                     (((float)fall_adc / ADC_MAX_VALUE) - smoothed_fall);
+
+    waveform_config.rise_pct = smoothed_rise;
+    waveform_config.fall_pct = smoothed_fall;
 }
 
+void update_buttons(void)
+{
+    update_one_button(&button1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0),
+                      &waveform_config.rise_shape);
+    update_one_button(&button2, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1),
+                      &waveform_config.fall_shape);
+}
 
-wavegen_output_t (*point_generators[3])(float) = {
-  get_sine_point,
-  get_triangle_point,
-  get_square_point
-};
+void next_audio_sample(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance != TIM4)
+        return;
 
-void next_audio_sample(TIM_HandleTypeDef*){
-	wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
-	wave_2.waveform_completion_ratio += wave_2.waveform_completion_increment;
+    wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
+    wave_2.waveform_completion_ratio += wave_2.waveform_completion_increment;
 
-	if(wave_1.waveform_completion_ratio >= 1.0f)
-		wave_1.waveform_completion_ratio -= 1.0f;
-	if(wave_2.waveform_completion_ratio >= 1.0f)
-		wave_2.waveform_completion_ratio -= 1.0f;
+    if (wave_1.waveform_completion_ratio >= 1.0f)
+        wave_1.waveform_completion_ratio -= 1.0f;
+    if (wave_2.waveform_completion_ratio >= 1.0f)
+        wave_2.waveform_completion_ratio -= 1.0f;
 
-	set_audio_output_value(
-		get_sine_point(wave_2.waveform_completion_ratio), point_generators[point_generator_id](wave_1.waveform_completion_ratio)
-	);
+    set_audio_output_value(
+        waveform_get_point(wave_2.waveform_completion_ratio, &waveform_config),
+        waveform_get_point(wave_1.waveform_completion_ratio, &waveform_config));
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    next_audio_sample(htim);
 }
 
 /* USER CODE END 0 */
@@ -142,10 +202,6 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -159,32 +215,31 @@ int main(void)
 
   /* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
+  /* USER CODE BEGIN 2 */
   MX_GPIO_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
-  /* USER CODE BEGIN 2 */
-  HAL_TIM_RegisterCallback(&htim4, HAL_TIM_PERIOD_ELAPSED_CB_ID, next_audio_sample);
-  HAL_TIM_Base_Start_IT(&htim4);
-  set_audio_output_value(max_pwm_f/2.0f, max_pwm_f/2.0f);
+  MX_ADC1_Init();
+  waveform_init();
+  // 2000f can be change naja, voice manager not fully integrate.
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 2000.0f);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_Base_Start_IT(&htim4);
+  set_audio_output_value(
+      (wavegen_output_t)(waveform_config.max_output / 2.0f),
+      (wavegen_output_t)(waveform_config.max_output / 2.0f)
+  );
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_Delay(2500);
+	  update_potentiometers();
+	  update_buttons();
 
-	  const int change_frequency = point_generator_id == 2;
-	  if(!change_frequency){
-		  point_generator_id++;
-		  continue;
-	  }
-	  frequency_id = (frequency_id + 1) % 4;
-	  wave_1.waveform_completion_increment = frequencies[frequency_id] / samplerate;
-	  point_generator_id = 0;
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -201,14 +256,9 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage
-  */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -223,8 +273,6 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
@@ -249,7 +297,6 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
