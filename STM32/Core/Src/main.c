@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "i2c.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -26,6 +27,10 @@
 /* USER CODE BEGIN Includes */
 #include "waveform.h"
 #include "voice_manager.h"
+#include "synth_comms.h"
+#include "mux_adc.h"
+#include "controls.h"
+#include "audio_out.h"
 #include <math.h>
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -46,42 +51,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-///Highest valid value is 350 for full speaker push, lowest is 0 for full speaker pull.
-///175 is center speaker position.
-
-#define AUDIO_SAMPLE_RATE_HZ 48000.0f
-#define ADC_MAX_VALUE        4095.0f
-#define CONTROL_SMOOTHING    0.15f
-#define BUTTON_DEBOUNCE_MS   25U
-
 WaveformConfig waveform_config =
 {
-    .rise_pct = 0.5f,
-    .fall_pct = 0.5f,
+    .rise_pct   = 0.5f,
+    .fall_pct   = 0.5f,
     .rise_shape = WAVE_SINE,
     .fall_shape = WAVE_TRIANGLE,
     .max_output = 350.0f
 };
 
-Waveform wave_1 = { .waveform_completion_ratio = 0.0f,
-                    .waveform_completion_increment = 500.0f / AUDIO_SAMPLE_RATE_HZ };
-Waveform wave_2 = { .waveform_completion_ratio = 0.0f,
-                    .waveform_completion_increment = 200.0f / AUDIO_SAMPLE_RATE_HZ };
-
-typedef struct
-{
-    GPIO_PinState raw_state;
-    GPIO_PinState stable_state;
-    uint32_t changed_at;
-} DebouncedButton;
-
-static DebouncedButton button1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
-static DebouncedButton button2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
-static float smoothed_rise = 0.5f;
-static float smoothed_fall = 0.5f;
-
 VoiceManager voice_manager;
-
 /* USER CODE END PV */
 
 void SystemClock_Config(void);
@@ -90,106 +69,12 @@ void SystemClock_Config(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
-void set_audio_output_value(wavegen_output_t left_value, wavegen_output_t right_value){
-	TIM3->CCR1 = right_value;
-	TIM3->CCR2 = left_value;
-}
-
-static void update_one_button(DebouncedButton *button, GPIO_PinState raw,
-                              WaveShape *shape)
+/* ponytail: stub replaced by Mind's note_on wrapper once voice_manager_note_on_by_key is implemented */
+static uint8_t stub_note_on(VoiceManager *vm, uint16_t key_id, uint8_t vel)
 {
-    uint32_t now = HAL_GetTick();
-
-    if (raw != button->raw_state)
-    {
-        button->raw_state = raw;
-        button->changed_at = now;
-    }
-
-    if ((raw != button->stable_state) &&
-        ((now - button->changed_at) >= BUTTON_DEBOUNCE_MS))
-    {
-        button->stable_state = raw;
-        if (button->stable_state == GPIO_PIN_RESET)
-        {
-            *shape = (WaveShape)((*shape + 1U) % 3U);
-        }
-    }
+    (void)vm; (void)key_id; (void)vel;
+    return 0;
 }
-
-static uint32_t read_adc_channel(uint32_t channel)
-{
-    ADC_ChannelConfTypeDef sConfig = {0};
-
-    sConfig.Channel = channel;
-    sConfig.Rank = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-        return 0;
-
-    if (HAL_ADC_Start(&hadc1) != HAL_OK)
-        return 0;
-
-    if (HAL_ADC_PollForConversion(&hadc1, 10U) != HAL_OK)
-    {
-        HAL_ADC_Stop(&hadc1);
-        return 0;
-    }
-
-    uint32_t value = HAL_ADC_GetValue(&hadc1);
-
-    HAL_ADC_Stop(&hadc1);
-
-    return value;
-}
-
-void update_potentiometers(void)
-{
-    uint32_t rise_adc = read_adc_channel(ADC_CHANNEL_0);
-    uint32_t fall_adc = read_adc_channel(ADC_CHANNEL_1);
-
-    smoothed_rise += CONTROL_SMOOTHING *
-                     (((float)rise_adc / ADC_MAX_VALUE) - smoothed_rise);
-
-    smoothed_fall += CONTROL_SMOOTHING *
-                     (((float)fall_adc / ADC_MAX_VALUE) - smoothed_fall);
-
-    waveform_config.rise_pct = smoothed_rise;
-    waveform_config.fall_pct = smoothed_fall;
-}
-
-void update_buttons(void)
-{
-    update_one_button(&button1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0),
-                      &waveform_config.rise_shape);
-    update_one_button(&button2, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1),
-                      &waveform_config.fall_shape);
-}
-
-void next_audio_sample(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance != TIM4)
-        return;
-
-    wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
-    wave_2.waveform_completion_ratio += wave_2.waveform_completion_increment;
-
-    if (wave_1.waveform_completion_ratio >= 1.0f)
-        wave_1.waveform_completion_ratio -= 1.0f;
-    if (wave_2.waveform_completion_ratio >= 1.0f)
-        wave_2.waveform_completion_ratio -= 1.0f;
-
-    set_audio_output_value(
-        waveform_get_point(wave_2.waveform_completion_ratio, &waveform_config),
-        waveform_get_point(wave_1.waveform_completion_ratio, &waveform_config));
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    next_audio_sample(htim);
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -220,9 +105,11 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
+  MX_I2C1_Init();
   waveform_init();
-  // 2000f can be change naja, voice manager not fully integrate.
-  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 2000.0f);
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 4186.0f);
+  audio_out_init(&voice_manager, &waveform_config);
+  controls_init();
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_Base_Start_IT(&htim4);
@@ -230,16 +117,33 @@ int main(void)
       (wavegen_output_t)(waveform_config.max_output / 2.0f),
       (wavegen_output_t)(waveform_config.max_output / 2.0f)
   );
+#ifdef IS_MASTER
+  boot_calibrate();
+  scan_slaves();
+#else
+  init_slave();
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t last_poll = 0;
   while (1)
   {
-	  update_potentiometers();
-	  update_buttons();
+    controls_update(&waveform_config);
 
-	  HAL_Delay(10);
+    uint32_t now = HAL_GetTick();
+    if (now - last_poll >= 10)
+    {
+      last_poll = now;
+#ifdef IS_MASTER
+      poll_slaves();
+      process_keys(&voice_manager, stub_note_on, voice_manager_note_off);
+      stale_check();
+#else
+      update_keyframe();
+#endif
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
