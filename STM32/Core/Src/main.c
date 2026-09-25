@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
+#include "i2c.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -25,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include "synth_comms.h"
+#include "mux_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,6 +47,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+/* Frequency set by note_on/note_off in synth_comms.c; 0 = silence */
+extern volatile float g_active_freq;
+
 ///Highest valid value is 350 for full speaker push, lowest is 0 for full speaker pull.
 ///175 is center speaker position.
 typedef uint16_t wavegen_output_t;
@@ -116,6 +123,18 @@ wavegen_output_t (*point_generators[3])(float) = {
 };
 
 void next_audio_sample(TIM_HandleTypeDef*){
+#ifdef IS_MASTER
+	/* Update waveform frequency from latest note_on */
+	float freq = g_active_freq;
+	if (freq > 0.0f)
+		wave_1.waveform_completion_increment = freq / samplerate;
+	else
+		wave_1.waveform_completion_increment = 0.0f;
+#endif
+	if (wave_1.waveform_completion_increment == 0.0f) {
+		set_audio_output_value((wavegen_output_t)(max_pwm_f / 2.0f)); /* silence = center */
+		return;
+	}
 	wave_1.waveform_completion_ratio += wave_1.waveform_completion_increment;
 	if(wave_1.waveform_completion_ratio >= 1.0f)
 		wave_1.waveform_completion_ratio -= 1.0f;
@@ -155,30 +174,44 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
+  MX_ADC1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_RegisterCallback(&htim4, HAL_TIM_PERIOD_ELAPSED_CB_ID, next_audio_sample);
   HAL_TIM_Base_Start_IT(&htim4);
-  set_audio_output_value(UINT16_MAX / 2);
+  set_audio_output_value((wavegen_output_t)(max_pwm_f / 2.0f));
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+
+#ifdef IS_MASTER
+  boot_calibrate();
+  scan_slaves();
+#else
+  init_slave();
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
   {
-	  HAL_Delay(2500);
-
-	  const int change_frequency = point_generator_id == 2;
-	  if(!change_frequency){
-		  point_generator_id++;
-		  continue;
-	  }
-	  frequency_id = (frequency_id + 1) % 4;
-	  wave_1.waveform_completion_increment = frequencies[frequency_id] / samplerate;
-	  point_generator_id = 0;
+    uint32_t last_tick = 0;
+    while (1)
+    {
+      uint32_t now = HAL_GetTick();
+      if (now - last_tick >= 10)
+      {
+        last_tick = now;
+#ifdef IS_MASTER
+        poll_slaves();
+        process_keys();
+        stale_check();
+#else
+        update_keyframe();
+#endif
+      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    }
   }
   /* USER CODE END 3 */
 }
