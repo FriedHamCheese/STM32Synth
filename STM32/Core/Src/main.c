@@ -105,6 +105,7 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
+  mux_adc_init();
   MX_I2C1_Init();
   waveform_init();
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 4186.0f);
