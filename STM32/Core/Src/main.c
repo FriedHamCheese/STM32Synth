@@ -63,11 +63,13 @@ WaveformConfig waveform_config =
 VoiceManager voice_manager;
 /* USER CODE END PV */
 
+/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
+/* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 /* ponytail: stub replaced by Mind's note_on wrapper once voice_manager_note_on_by_key is implemented */
 static uint8_t stub_note_on(VoiceManager *vm, uint16_t key_id, uint8_t vel)
@@ -87,6 +89,10 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -100,13 +106,14 @@ int main(void)
 
   /* USER CODE END SysInit */
 
-  /* USER CODE BEGIN 2 */
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM3_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
-  mux_adc_init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
+  /* USER CODE BEGIN 2 */
+  mux_adc_init();
   waveform_init();
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 4186.0f);
   audio_out_init(&voice_manager, &waveform_config);
@@ -139,7 +146,7 @@ int main(void)
       last_poll = now;
 #ifdef IS_MASTER
       poll_slaves();
-      process_keys(&voice_manager, stub_note_on, voice_manager_note_off);
+      process_keys(&voice_manager, stub_note_on, voice_manager_note_off, now);
       stale_check();
 #else
       update_keyframe();
@@ -161,9 +168,14 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
+  /** Configure the main internal regulator output voltage
+  */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -178,6 +190,8 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;

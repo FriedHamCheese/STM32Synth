@@ -1,6 +1,10 @@
 #include "synth_comms.h"
-#include "i2c.h"
+#include "voice_manager.h"
 #include <math.h>
+
+#ifndef PC_UNITTEST
+#include "i2c.h"
+#endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MASTER
@@ -19,14 +23,20 @@ uint8_t           g_slave_count                   = 0;
 
 static KeyFrame s_frame;
 
-/* Fast press (10ms) → vel 127; slow press (300ms+) → vel 1 */
-static uint8_t map_velocity(uint32_t delta_ms)
+/* Fast press (10ms) → vel 127; slow press (2500ms+) → vel 1 */
+int16_t map_velocity(uint32_t delta_ms)
 {
-    if (delta_ms < 10)  return 127;
-    if (delta_ms > 300) return 1;
-    return (uint8_t)(127 - ((delta_ms - 10) * 126 / 290));
+    const uint32_t min_ms = 10;
+    const uint32_t max_ms = 2500;
+    const int16_t max_velocity = 127;
+    const int16_t min_velocity = 1;
+    
+    if (delta_ms <= min_ms)  return max_velocity;
+    if (delta_ms >= max_ms) return min_velocity;
+    return (int16_t)(max_velocity - ((delta_ms*max_velocity)/max_ms));
 }
 
+#ifndef PC_UNITTEST
 void boot_calibrate(void)
 {
     for (uint8_t s = 0; s < MAX_SLAVES; s++) {
@@ -62,35 +72,33 @@ void poll_slaves(void)
         }
     }
 }
+#endif
 
 void process_keys(VoiceManager *vm,
-                  uint8_t (*note_on)(VoiceManager*, uint16_t, uint8_t),
-                  void    (*note_off)(VoiceManager*, uint16_t))
-{
-    for (uint8_t s = 0; s < g_slave_count; s++) {
+                  uint8_t (*note_on)(VoiceManager*, uint16_t, uint16_t),
+                  void    (*note_off)(VoiceManager*, uint16_t),
+                  uint32_t now_ms
+){
+    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
         for (uint8_t k = 0; k < 12; k++) {
             int16_t depth = g_keys[s][k] - g_baseline[s][k];
 
             /* Track first movement for time-based velocity */
             if (!g_press_moving[s][k] && depth > MOVE_THRESHOLD) {
                 g_press_moving[s][k] = 1;
-                g_press_start[s][k]  = HAL_GetTick();
+                g_press_start[s][k]  = now_ms;
             }
 
             if (g_key_state[s][k] == KEY_IDLE && depth > PRESS_THRESHOLD) {
-                uint32_t delta_ms    = HAL_GetTick() - g_press_start[s][k];
+                uint32_t delta_ms    = now_ms - g_press_start[s][k];
                 uint8_t  vel         = map_velocity(delta_ms);
                 g_key_velocity[s][k] = (int16_t)vel;
                 g_key_state[s][k]    = KEY_PRESSED;
-                __disable_irq();
                 note_on(vm, (uint16_t)(s * 12 + k), vel);
-                __enable_irq();
             } else if (g_key_state[s][k] == KEY_PRESSED && depth <= PRESS_THRESHOLD) {
                 g_key_state[s][k]    = KEY_IDLE;
                 g_press_moving[s][k] = 0;
-                __disable_irq();
                 note_off(vm, (uint16_t)(s * 12 + k));
-                __enable_irq();
             }
 
             g_prev_keys[s][k] = g_keys[s][k];
@@ -98,6 +106,7 @@ void process_keys(VoiceManager *vm,
     }
 }
 
+#ifndef PC_UNITTEST
 void stale_check(void)
 {
     uint32_t now = HAL_GetTick();
@@ -113,6 +122,7 @@ void stale_check(void)
         }
     }
 }
+#endif
 
 #endif /* IS_MASTER */
 

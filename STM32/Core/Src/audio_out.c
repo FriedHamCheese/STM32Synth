@@ -12,10 +12,10 @@ void audio_out_init(VoiceManager *vm, WaveformConfig *cfg)
     s_cfg = cfg;
 }
 
-void set_audio_output_value(uint16_t left, uint16_t right)
+void set_audio_output_value(wavegen_output_t left, wavegen_output_t right)
 {
-    TIM3->CCR1 = right;
-    TIM3->CCR2 = left;
+    TIM2->CCR1 = right;
+    TIM2->CCR2 = left;
 }
 
 /* 48kHz ISR — called from TIM4 overflow */
