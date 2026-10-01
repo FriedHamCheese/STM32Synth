@@ -23,13 +23,12 @@ void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_f
     }
 }
 
-uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, float frequency_hz)
+uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t velocity)
 {
     if (manager == 0 ||
-        !isfinite(frequency_hz) ||
         manager->sample_rate_hz <= 0.0f ||
-        manager->max_frequency_hz <= 0.0f ||
-        frequency_hz <= 0.0f)
+        manager->max_frequency_hz <= 0.0f
+    )
         return 0;
 
     for (int i = 0; i < MAX_VOICES; i++)
@@ -41,6 +40,7 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, float freq
     if (manager->active_voice_count >= MAX_VOICES)
         return 0;
 
+    float frequency_hz = get_key_frequency(key_id);
     if (frequency_hz > manager->max_frequency_hz)
         frequency_hz = manager->max_frequency_hz;
 
@@ -116,7 +116,7 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     if (voice_count == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
 
-    mixed_sample /= (float)voice_count;
+    mixed_sample /= (float)MAX_VOICES;
     mixed_sample += OUTPUT_MIDPOINT;
 
     if (mixed_sample < OUTPUT_MIN)
@@ -128,3 +128,27 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     return (wavegen_output_t)mixed_sample;
 }
 
+static float frequencies_at_octave_0[12] = {
+  16.35160f,
+  17.32391f,
+  18.35405f,
+  19.44544f,
+  20.60172f,
+  21.82676f,
+  23.12465f,
+  24.49971f,
+  25.95654f,
+  27.50000f,
+  29.13524f,
+  30.86771f
+};
+
+float get_key_frequency(uint8_t key_id){
+  const uint8_t keys_per_octave = 12;
+  const uint8_t octave_from_octave_0 = key_id / keys_per_octave;
+  const uint8_t key = key_id % keys_per_octave;
+  
+  //An octave higher is 2x the frequency
+  const uint8_t octave_frequency_multiplier = 1 << (octave_from_octave_0 + 1);
+  return frequencies_at_octave_0[key] * (float)octave_frequency_multiplier;
+} 

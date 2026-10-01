@@ -60,7 +60,7 @@ extern uint8_t           g_slave_count;
 int16_t map_velocity(uint32_t delta_ms);
 
 void boot_calibrate(void);   /* 200ms blocking cal at boot — call before scan_slaves */
-void scan_slaves(void);      /* probe 0x10..0x15, set g_slave_count */
+//void scan_slaves(void);      /* probe 0x10..0x15, set g_slave_count */
 void poll_slaves(void);      /* read KeyFrame from each slave, update g_keys */
 /* threshold detect, note_on/note_off */
 void process_keys(
@@ -69,7 +69,7 @@ void process_keys(
     void    (*note_off)(VoiceManager*, uint16_t),
     uint32_t now_ms
 );
-void stale_check(void);      /* zero rows silent >STALE_TIMEOUT_MS */
+//void stale_check(void);      /* zero rows silent >STALE_TIMEOUT_MS */
 
 /* Wire these to the synthesis engine */
 void note_on(uint8_t slave, uint8_t key, int16_t velocity);

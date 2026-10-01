@@ -23,10 +23,10 @@ typedef struct
 
 void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_frequency_hz);
 
-uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, float frequency_hz);
+uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t velocity);
 
 void voice_manager_note_off(VoiceManager *manager, uint16_t key_id);
 
 wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformConfig *config);
-
+float get_key_frequency(uint8_t key_id);
 #endif

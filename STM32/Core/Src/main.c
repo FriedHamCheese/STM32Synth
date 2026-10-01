@@ -42,6 +42,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define V1_TEST_V2
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,7 +57,7 @@ WaveformConfig waveform_config =
     .rise_pct   = 0.5f,
     .fall_pct   = 0.5f,
     .rise_shape = WAVE_SINE,
-    .fall_shape = WAVE_TRIANGLE,
+    .fall_shape = WAVE_SINE,
     .max_output = 350.0f
 };
 
@@ -114,23 +115,28 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   mux_adc_init();
+  
+  #ifdef IS_MASTER
   waveform_init();
-  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, 4186.0f);
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ);
   audio_out_init(&voice_manager, &waveform_config);
   controls_init();
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   HAL_TIM_Base_Start_IT(&htim4);
-  set_audio_output_value(
-      (wavegen_output_t)(waveform_config.max_output / 2.0f),
-      (wavegen_output_t)(waveform_config.max_output / 2.0f)
-  );
-#ifdef IS_MASTER
+  set_audio_output_value(0, 0);
   boot_calibrate();
-  scan_slaves();
-#else
+  #else
   init_slave();
-#endif
+  #endif
+
+  #ifdef V1_TEST_V2
+  memset(g_keys, 0, sizeof(g_keys));  
+  memset(g_baseline, 0, sizeof(g_baseline));
+  uint32_t last_interval_ms = 0;
+  uint8_t test_stage = 0;
+  #endif
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -144,14 +150,37 @@ int main(void)
     if (now - last_poll >= 10)
     {
       last_poll = now;
-#ifdef IS_MASTER
+      #ifdef IS_MASTER
       poll_slaves();
-      process_keys(&voice_manager, stub_note_on, voice_manager_note_off, now);
-      stale_check();
-#else
+      process_keys(&voice_manager, voice_manager_note_on, voice_manager_note_off, now);
+      #else
       update_keyframe();
-#endif
+      #endif
     }
+    
+    #if defined(V1_TEST_V2) && defined(IS_MASTER)
+    const int16_t trigger_keypress = PRESS_THRESHOLD + 1;
+
+    if(now - last_interval_ms >= 2000){
+      switch (test_stage) {
+        case 0:
+        	g_keys[4][0] = trigger_keypress;
+        	break;
+        case 1:
+        	g_keys[4][4] = trigger_keypress;
+        	break;
+        case 2:
+        	g_keys[4][7] = trigger_keypress;
+        	break;
+      }
+      
+      if (test_stage < 3)
+        test_stage++;
+      last_interval_ms = now;
+    }
+
+    #endif
+    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

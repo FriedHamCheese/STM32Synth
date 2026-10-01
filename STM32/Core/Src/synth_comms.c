@@ -49,6 +49,7 @@ void boot_calibrate(void)
     }
 }
 
+/*
 void scan_slaves(void)
 {
     g_slave_count = 0;
@@ -59,10 +60,11 @@ void scan_slaves(void)
             g_slave_count = s + 1;
     }
 }
+*/
 
 void poll_slaves(void)
 {
-    for (uint8_t s = 0; s < g_slave_count; s++) {
+    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
         if (HAL_I2C_Master_Receive(&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
                                    (uint8_t *)&s_frame, sizeof(s_frame),
                                    I2C_TIMEOUT_MS) == HAL_OK) {
@@ -106,7 +108,7 @@ void process_keys(VoiceManager *vm,
     }
 }
 
-#ifndef PC_UNITTEST
+/*
 void stale_check(void)
 {
     uint32_t now = HAL_GetTick();
@@ -122,7 +124,7 @@ void stale_check(void)
         }
     }
 }
-#endif
+*/
 
 #endif /* IS_MASTER */
 
