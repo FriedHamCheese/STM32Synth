@@ -141,10 +141,14 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
 {
     float rise;
     float fall;
+    float hold;
     float total;
+    float half_phase;
     float value;
 
-    if (config == NULL || !isfinite(phase) || !isfinite(config->max_output) ||
+    if (config == NULL ||
+        !isfinite(phase) ||
+        !isfinite(config->max_output) ||
         config->max_output <= 0.0f)
         return 0;
 
@@ -163,21 +167,54 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
 
     total = rise + fall;
 
-    rise /= total;
-    fall /= total;
-
-    if (phase < rise)
+    if (total > 1.0f)
     {
-        float x = phase / rise;
-        value = get_shape_value(config->rise_shape, x, 1);
+        rise /= total;
+        fall /= total;
+    }
+
+    hold = 1.0f - rise - fall;
+
+    if (phase < 0.5f)
+    {
+        half_phase = phase * 2.0f;
+
+        if (half_phase < rise)
+        {
+            float x = half_phase / rise;
+            value = get_shape_value(config->rise_shape, x, 1);
+        }
+        else if (half_phase < rise + hold)
+        {
+            value = 1.0f;
+        }
+        else
+        {
+            float x = (half_phase - rise - hold) / fall;
+            value = get_shape_value(config->fall_shape, x, 0);
+        }
     }
     else
     {
-        float x = (phase - rise) / fall;
-        value = get_shape_value(config->fall_shape, x, 0);
+        half_phase = (phase - 0.5f) * 2.0f;
+
+        if (half_phase < rise)
+        {
+            float x = half_phase / rise;
+            value = -get_shape_value(config->rise_shape, x, 1);
+        }
+        else if (half_phase < rise + hold)
+        {
+            value = -1.0f;
+        }
+        else
+        {
+            float x = (half_phase - rise - hold) / fall;
+            value = -get_shape_value(config->fall_shape, x, 0);
+        }
     }
 
-    value = clamp01(value);
+    value = (value + 1.0f) * 0.5f;
 
     return (wavegen_output_t)(value * config->max_output);
 }
