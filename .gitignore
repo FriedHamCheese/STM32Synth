@@ -1,8 +1,17 @@
+# CubeMX-generated files (recreate by generating code from STM32.ioc)
 STM32/Drivers
-STM32/Debug
-.metadata
 STM32/STM32F401RCTX_FLASH.ld
 STM32/.mxproject
-kicad/.history/
-STM32/.mxproject
+
+# CubeIDE build output
+STM32/Debug
+STM32/Release
+.metadata
+
+# Host unit-test binaries (STM32/Core/gcc-unittest)
+STM32/Core/gcc-unittest/test_main
 STM32/Core/gcc-unittest/test_main.exe
+
+# Editors / OS
+kicad/.history/
+.DS_Store

@@ -54,6 +54,7 @@
 /* USER CODE BEGIN PV */
 WaveformConfig waveform_config =
 {
+    .shape      = WAVE_SINE,
     .rise_pct   = 0.5f,
     .fall_pct   = 0.5f,
     .rise_shape = WAVE_SINE,

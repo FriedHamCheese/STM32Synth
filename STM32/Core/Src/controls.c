@@ -26,19 +26,20 @@ static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape
     if ((raw != btn->stable_state) && ((now - btn->changed_at) >= BUTTON_DEBOUNCE_MS)) {
         btn->stable_state = raw;
         if (btn->stable_state == GPIO_PIN_RESET)
-            *shape = (WaveShape)((*shape + 1U) % 3U);
+            *shape = (WaveShape)((*shape + 1U) % WAVE_SHAPE_COUNT);
     }
 }
 
 void controls_update(WaveformConfig *cfg)
 {
-    /* Pots via mux — ch0=rise period, ch1=fall period, ch2-11 stubbed (ADSR/LFO/pitch) */
+    /* Pots via mux — ch0/ch1 legacy (rise/fall period), unused by the wavetable
+       oscillator; ch2-11 stubbed (ADSR/LFO/pitch). */
     s_smoothed_rise += CONTROL_SMOOTHING * ((mux_read(0) / ADC_MAX_VALUE) - s_smoothed_rise);
     s_smoothed_fall += CONTROL_SMOOTHING * ((mux_read(1) / ADC_MAX_VALUE) - s_smoothed_fall);
     cfg->rise_pct = s_smoothed_rise;
     cfg->fall_pct = s_smoothed_fall;
-    /* ponytail: ch2-11 (ADSR/LFO/pitch) stubbed until Putt/Mind add those fields to WaveformConfig */
 
-    update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0), &cfg->rise_shape);
-    update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1), &cfg->fall_shape);
+    /* Either button steps through the wavetables (Sine -> Triangle -> Square -> Sawtooth). */
+    update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0), &cfg->shape);
+    update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1), &cfg->shape);
 }
