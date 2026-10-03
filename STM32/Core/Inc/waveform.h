@@ -27,8 +27,6 @@ typedef struct
     float max_output;
 } WaveformConfig;
 
-void waveform_init(void);
-
 wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config);
 
 wavegen_output_t get_sine_point(float phase, float max_output);

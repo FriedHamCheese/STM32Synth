@@ -31,6 +31,7 @@
 #include "mux_adc.h"
 #include "controls.h"
 #include "audio_out.h"
+#include "sine_lookup.h"
 #include <math.h>
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -59,6 +60,12 @@ WaveformConfig waveform_config =
     .rise_shape = WAVE_SINE,
     .fall_shape = WAVE_SINE,
     .max_output = 350.0f
+};
+
+VolumeOscillationParam volume_oscillator_param = {
+    .frequency = 1.0f/2.0f,
+    .completion = 0.0f,
+    .strength = 0.50f
 };
 
 VoiceManager voice_manager;
@@ -117,9 +124,9 @@ int main(void)
   mux_adc_init();
   
   #ifdef IS_MASTER
-  waveform_init();
+  sine_lookup_init();
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ);
-  audio_out_init(&voice_manager, &waveform_config);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -144,7 +151,9 @@ int main(void)
   uint32_t last_poll = 0;
   while (1)
   {
+    #ifdef V1_TEST_V2
     controls_update(&waveform_config);
+    #endif
 
     uint32_t now = HAL_GetTick();
     if (now - last_poll >= 10)
@@ -164,18 +173,38 @@ int main(void)
     if(now - last_interval_ms >= 2000){
       switch (test_stage) {
         case 0:
-        	g_keys[4][0] = trigger_keypress;
+        	g_keys[3][0] = trigger_keypress;
         	break;
         case 1:
-        	g_keys[4][4] = trigger_keypress;
+        	g_keys[3][4] = trigger_keypress;
         	break;
         case 2:
-        	g_keys[4][7] = trigger_keypress;
+        	g_keys[3][7] = trigger_keypress;
+        	break;
+        case 3:
+        	g_keys[5][0] = trigger_keypress;
+        	break;
+        case 4:
+        	g_keys[5][4] = trigger_keypress;
+        	break;
+        case 5:
+        	g_keys[5][7] = trigger_keypress;
+        	break;
+        case 6:
+        	g_keys[6][0] = trigger_keypress;
+        	break;
+        case 7:
+        	g_keys[6][4] = trigger_keypress;
+        	break;
+        case 8:
+        	g_keys[6][7] = trigger_keypress;
         	break;
       }
       
-      if (test_stage < 3)
+      if (test_stage < 5){
         test_stage++;
+        volume_oscillator_param.frequency *= 2.0;
+      }
       last_interval_ms = now;
     }
 

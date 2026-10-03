@@ -5,6 +5,7 @@
 #include "waveform.h"
 
 #define MAX_VOICES 9
+#define MAX_VOICES_INVERSE_F 1.0f/((float)MAX_VOICES)
 
 typedef struct
 {

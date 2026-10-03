@@ -116,7 +116,7 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     if (voice_count == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
 
-    mixed_sample /= (float)MAX_VOICES;
+    mixed_sample *= MAX_VOICES_INVERSE_F;
     mixed_sample += OUTPUT_MIDPOINT;
 
     if (mixed_sample < OUTPUT_MIN)

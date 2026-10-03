@@ -1,55 +1,10 @@
 #include "waveform.h"
+#include "sine_lookup.h"
 #include <math.h>
 
-#define PI 3.14159265358979323846f
-#define SINE_TABLE_SIZE 256
-
-static float sine_table[SINE_TABLE_SIZE + 1];
-static int sine_table_initialized = 0;
-
-static float clamp01(float value)
-{
-    if (value < 0.0f)
-        return 0.0f;
-
-    if (value > 1.0f)
-        return 1.0f;
-
-    return value;
-}
-
-void waveform_init(void)
-{
-    if (sine_table_initialized)
-        return;
-
-    for (int i = 0; i <= SINE_TABLE_SIZE; i++)
-    {
-        float x = (float)i / (float)SINE_TABLE_SIZE;
-        sine_table[i] = sinf(x * PI * 0.5f);
-    }
-
-    sine_table_initialized = 1;
-}
-
-static float sine_lookup(float x)
-{
-    float position;
-    int index;
-    float fraction;
-
-    x = clamp01(x);
-
-    position = x * (float)SINE_TABLE_SIZE;
-    index = (int)position;
-
-    if (index >= SINE_TABLE_SIZE)
-        return sine_table[SINE_TABLE_SIZE];
-
-    fraction = position - (float)index;
-
-    return sine_table[index] +
-           fraction * (sine_table[index + 1] - sine_table[index]);
+__attribute__((always_inline))
+static inline float sin_quarter_circle(float wave_completion){
+  return sine_lookup(wave_completion * 0.25f);
 }
 
 static float get_shape_value(WaveShape shape, float x, int rising)
@@ -60,8 +15,8 @@ static float get_shape_value(WaveShape shape, float x, int rising)
     {
         case WAVE_SINE:
             return rising
-                ? sine_lookup(x)
-                : sine_lookup(1.0f - x);
+                ? sin_quarter_circle(x)
+                : sin_quarter_circle(1.0f - x);
 
         case WAVE_TRIANGLE:
             return rising ? x : 1.0f - x;
@@ -83,8 +38,6 @@ wavegen_output_t get_sine_point(float phase, float max_output)
 
     if (!isfinite(phase) || !isfinite(max_output) || max_output <= 0.0f)
         return 0;
-
-    waveform_init();
 
     normalized_phase = phase - floorf(phase);
 
@@ -148,7 +101,7 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
         config->max_output <= 0.0f)
         return 0;
 
-    waveform_init();
+    //waveform_init();
 
     phase -= floorf(phase);
 
