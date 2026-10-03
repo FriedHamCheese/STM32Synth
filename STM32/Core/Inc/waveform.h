@@ -5,7 +5,7 @@
 
 typedef uint16_t wavegen_output_t;
 
-typedef enum
+typedef enum uint8_t
 {
     WAVE_SINE = 0,
     WAVE_TRIANGLE,

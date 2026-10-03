@@ -141,7 +141,7 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
 {
     float rise;
     float fall;
-    float hold;
+    float total;
     float value;
 
     if (config == NULL || !isfinite(phase) || !isfinite(config->max_output) ||
@@ -161,27 +161,19 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
     if (fall < 0.001f)
         fall = 0.001f;
 
-    if (rise + fall > 1.0f)
-    {
-        float total = rise + fall;
-        rise /= total;
-        fall /= total;
-    }
+    total = rise + fall;
 
-    hold = 1.0f - rise - fall;
+    rise /= total;
+    fall /= total;
 
     if (phase < rise)
     {
         float x = phase / rise;
         value = get_shape_value(config->rise_shape, x, 1);
     }
-    else if (phase < rise + hold)
-    {
-        value = 1.0f;
-    }
     else
     {
-        float x = (phase - rise - hold) / fall;
+        float x = (phase - rise) / fall;
         value = get_shape_value(config->fall_shape, x, 0);
     }
 
