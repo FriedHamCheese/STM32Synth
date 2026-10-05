@@ -65,7 +65,7 @@ WaveformConfig waveform_config =
 VolumeOscillationParam volume_oscillator_param = {
     .frequency = 1.0f/2.0f,
     .completion = 0.0f,
-    .strength = 0.50f
+    .strength = 0.00f
 };
 
 VoiceManager voice_manager;
@@ -79,12 +79,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* ponytail: stub replaced by Mind's note_on wrapper once voice_manager_note_on_by_key is implemented */
-static uint8_t stub_note_on(VoiceManager *vm, uint16_t key_id, uint8_t vel)
-{
-    (void)vm; (void)key_id; (void)vel;
-    return 0;
-}
 /* USER CODE END 0 */
 
 /**
@@ -138,8 +132,8 @@ int main(void)
   #endif
 
   #ifdef V1_TEST_V2
-  memset(g_keys, 0, sizeof(g_keys));  
-  memset(g_baseline, 0, sizeof(g_baseline));
+  memset((void*)g_keys, 0, sizeof(g_keys));  
+  memset((void*)g_baseline, 0, sizeof(g_baseline));
   uint32_t last_interval_ms = 0;
   uint8_t test_stage = 0;
   #endif
@@ -151,7 +145,7 @@ int main(void)
   uint32_t last_poll = 0;
   while (1)
   {
-    #ifdef V1_TEST_V2
+    #ifndef V1_TEST_V2
     controls_update(&waveform_config);
     #endif
 
@@ -169,7 +163,7 @@ int main(void)
     
     #if defined(V1_TEST_V2) && defined(IS_MASTER)
     const int16_t trigger_keypress = PRESS_THRESHOLD + 1;
-
+    
     if(now - last_interval_ms >= 2000){
       switch (test_stage) {
         case 0:
@@ -201,13 +195,10 @@ int main(void)
         	break;
       }
       
-      if (test_stage < 5){
-        test_stage++;
-        volume_oscillator_param.frequency *= 2.0;
-      }
+      test_stage++;
+      test_stage %= 5;
       last_interval_ms = now;
     }
-
     #endif
     
     /* USER CODE END WHILE */
