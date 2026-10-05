@@ -1,5 +1,6 @@
 #include "controls.h"
 #include "mux_adc.h"
+#include "volume_oscillation.h"
 #include "stm32f4xx_hal.h"
 
 #define CONTROL_SMOOTHING   0.15f
@@ -30,13 +31,25 @@ static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape
     }
 }
 
-void controls_update(WaveformConfig *cfg)
+void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *master_volume)
 {
-    /* Pots via mux — ch0=rise period, ch1=fall period, ch2-11 stubbed (ADSR/LFO/pitch) */
+    /* Pots via mux — ch0=rise period, ch1=fall period, ch6=volume oscillation frequency,
+       ch7=volume oscillation strength, ch2-5/ch8-11 stubbed (ADSR/LFO/pitch) */
     s_smoothed_rise += CONTROL_SMOOTHING * ((mux_read(0) / ADC_MAX_VALUE) - s_smoothed_rise);
     s_smoothed_fall += CONTROL_SMOOTHING * ((mux_read(1) / ADC_MAX_VALUE) - s_smoothed_fall);
     cfg->rise_pct = s_smoothed_rise;
     cfg->fall_pct = s_smoothed_fall;
+    
+    const float volume_osc_min_hz = 0.1f;
+    const float volume_osc_max_hz = 20.0f;
+    const float master_volume_max_value = 10.0f;
+    vosc->frequency = volume_osc_min_hz 
+                    + ((mux_read(6) / ADC_MAX_VALUE) 
+                      * (volume_osc_max_hz - volume_osc_min_hz)
+                      );
+    vosc->strength = mux_read(7) / ADC_MAX_VALUE;
+    *master_volume = (mux_read(8) / ADC_MAX_VALUE) * master_volume_max_value;
+
     /* ponytail: ch2-11 (ADSR/LFO/pitch) stubbed until Putt/Mind add those fields to WaveformConfig */
 
     update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0), &cfg->rise_shape);

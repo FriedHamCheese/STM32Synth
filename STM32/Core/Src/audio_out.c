@@ -6,13 +6,15 @@
 VoiceManager    *s_vm  = 0;
 WaveformConfig  *s_cfg = 0;
 VolumeOscillationParam *s_vosc = 0;
+float* s_mvol = 0;
 
 /* ponytail: file-scope pointers set once at init; safe because single-core M4 */
-void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp)
+void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume)
 {
     s_vm  = vm;
     s_cfg = cfg;
     s_vosc = voscp;
+    s_mvol = master_volume;
 }
 
 //Function for readability, used only here, O1+ will probably inline this, but just to make it clear
@@ -31,7 +33,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     /* ponytail: still using waveform_get_point stub; swap for voice_manager_get_sample
        once Mind wires VoiceManager into the audio path */
-    const float volume = get_output_amplitude_multiplier(s_vosc);
+    const float volume = get_output_amplitude_multiplier(s_vosc) * (*s_mvol);
     const float sample_midpoint = 175.0f;
     const float amplitude = (float)voice_manager_get_sample(s_vm, s_cfg) - sample_midpoint;
     const float sample = (amplitude * volume) + sample_midpoint;

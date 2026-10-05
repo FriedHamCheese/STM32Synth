@@ -69,6 +69,8 @@ VolumeOscillationParam volume_oscillator_param = {
 };
 
 VoiceManager voice_manager;
+//Master volume can be from 0.0 to 10.0x, overdrive woo
+float master_volume = 1.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -120,7 +122,7 @@ int main(void)
   #ifdef IS_MASTER
   sine_lookup_init();
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ);
-  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -146,7 +148,7 @@ int main(void)
   while (1)
   {
     #ifndef V1_TEST_V2
-    controls_update(&waveform_config);
+    controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
     #endif
 
     uint32_t now = HAL_GetTick();
