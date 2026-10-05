@@ -2,3 +2,8 @@ STM32/Drivers
 STM32/Debug
 .metadata
 STM32/STM32F401RCTX_FLASH.ld
+STM32/.mxproject
+kicad/.history/
+STM32/.mxproject
+STM32/Core/gcc-unittest/test_main.exe
+STM32/Core/gcc-unittest/waveform.csv
