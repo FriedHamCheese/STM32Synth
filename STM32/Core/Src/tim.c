@@ -104,7 +104,10 @@ void MX_TIM4_Init(void)
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = 0;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 1750;
+  /* Up-counting overflow happens after ARR+1 ticks: 84 MHz / 1750 = 48 kHz,
+     matching AUDIO_SAMPLE_RATE_HZ. (Period 1750 gave 84 MHz / 1751 =
+     47.97 kHz, ~0.06% flat.) */
+  htim4.Init.Period = 1749;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
