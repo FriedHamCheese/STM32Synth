@@ -1,6 +1,7 @@
 #include "waveform.h"
 #include "sine_lookup.h"
 #include <math.h>
+#include <stddef.h>
 
 __attribute__((always_inline))
 static inline float sin_quarter_circle(float wave_completion){
