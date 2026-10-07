@@ -10,7 +10,9 @@
 typedef struct
 {
     uint8_t active;
+    uint8_t releasing;   /* 1 while ramping down to silence */
     uint16_t key_id;
+    float gain;          /* de-click envelope, 0..1 */
     Waveform oscillator;
 } Voice;
 
@@ -19,6 +21,7 @@ typedef struct
     Voice voices[MAX_VOICES];
     float sample_rate_hz;
     float max_frequency_hz;
+    float gain_step;     /* per-callback envelope increment */
     uint8_t active_voice_count;
 } VoiceManager;
 

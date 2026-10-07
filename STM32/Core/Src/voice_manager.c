@@ -5,6 +5,10 @@
 #define OUTPUT_MIN 0.0f
 #define OUTPUT_MAX 350.0f
 
+/* De-click attack/release time. Short enough not to smear notes, long enough
+   to remove the step discontinuity when a voice starts or stops. */
+#define VOICE_RAMP_SECONDS 0.004f
+
 void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_frequency_hz)
 {
     if (manager == 0)
@@ -13,11 +17,16 @@ void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_f
     manager->sample_rate_hz = sample_rate_hz;
     manager->max_frequency_hz = max_frequency_hz;
     manager->active_voice_count = 0;
+    manager->gain_step = (sample_rate_hz > 0.0f)
+        ? 1.0f / (VOICE_RAMP_SECONDS * sample_rate_hz)
+        : 1.0f;
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
         manager->voices[i].active = 0;
+        manager->voices[i].releasing = 0;
         manager->voices[i].key_id = 0;
+        manager->voices[i].gain = 0.0f;
         manager->voices[i].oscillator.waveform_completion_ratio = 0.0f;
         manager->voices[i].oscillator.waveform_completion_increment = 0.0f;
     }
@@ -34,7 +43,16 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active && manager->voices[i].key_id == key_id)
+        {
+            if (manager->voices[i].releasing)
+            {
+                /* Re-press during release: reuse the voice and let the
+                   envelope ramp back up instead of stacking a new one. */
+                manager->voices[i].releasing = 0;
+                return 1;
+            }
             return 0;
+        }
     }
 
     if (manager->active_voice_count >= MAX_VOICES)
@@ -51,6 +69,8 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
             /* Initialise every field before publishing the voice as active,
                so the audio ISR can never observe a half-initialised voice. */
             manager->voices[i].key_id = key_id;
+            manager->voices[i].gain = 0.0f;
+            manager->voices[i].releasing = 0;
             manager->voices[i].oscillator.waveform_completion_ratio = 0.0f;
             manager->voices[i].oscillator.waveform_completion_increment =
                 frequency_hz / manager->sample_rate_hz;
@@ -74,11 +94,9 @@ void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
     {
         if (manager->voices[i].active && manager->voices[i].key_id == key_id)
         {
-            manager->voices[i].active = 0;
-
-            if (manager->active_voice_count > 0)
-                manager->active_voice_count--;
-
+            /* Start a de-click release; the voice is freed when the envelope
+               reaches zero in voice_manager_get_sample(). */
+            manager->voices[i].releasing = 1;
             return;
         }
     }
@@ -98,23 +116,48 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
-        if (manager->voices[i].active)
+        Voice *voice = &manager->voices[i];
+
+        if (!voice->active)
+            continue;
+
+        phase = voice->oscillator.waveform_completion_ratio;
+
+        sample = (float)waveform_get_point(phase, config);
+
+        mixed_sample += (sample - OUTPUT_MIDPOINT) * voice->gain;
+
+        phase += voice->oscillator.waveform_completion_increment;
+
+        if (phase >= 1.0f)
+            phase -= 1.0f;
+
+        voice->oscillator.waveform_completion_ratio = phase;
+
+        /* Advance the de-click envelope; free the voice when a release ends. */
+        if (voice->releasing)
         {
-            phase = manager->voices[i].oscillator.waveform_completion_ratio;
+            voice->gain -= manager->gain_step;
+            if (voice->gain <= 0.0f)
+            {
+                voice->gain = 0.0f;
+                voice->releasing = 0;
+                voice->active = 0;
 
-            sample = (float)waveform_get_point(phase, config);
+                if (manager->active_voice_count > 0)
+                    manager->active_voice_count--;
 
-            mixed_sample += sample - OUTPUT_MIDPOINT;
-
-            phase += manager->voices[i].oscillator.waveform_completion_increment;
-
-            if (phase >= 1.0f)
-                phase -= 1.0f;
-
-            manager->voices[i].oscillator.waveform_completion_ratio = phase;
-
-            voice_count++;
+                continue;
+            }
         }
+        else if (voice->gain < 1.0f)
+        {
+            voice->gain += manager->gain_step;
+            if (voice->gain > 1.0f)
+                voice->gain = 1.0f;
+        }
+
+        voice_count++;
     }
 
     if (voice_count == 0)
