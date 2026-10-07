@@ -32,6 +32,7 @@
 #include "controls.h"
 #include "audio_out.h"
 #include "sine_lookup.h"
+#include "adsr.h"
 #include <math.h>
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -66,6 +67,13 @@ VolumeOscillationParam volume_oscillator_param = {
     .frequency = 1.0f/2.0f,
     .completion = 0.0f,
     .strength = 0.00f
+};
+
+AdsrParam adsr_param = {
+    .attack_ms = 10,
+    .decay_ms = 200,
+    .sustain_level = 0.6f,
+    .release_ms = 300
 };
 
 VoiceManager voice_manager;
@@ -119,7 +127,7 @@ int main(void)
   
   #ifdef IS_MASTER
   sine_lookup_init();
-  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ);
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param, HAL_GetTick);
   audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
@@ -147,6 +155,7 @@ int main(void)
   {
     #ifndef V1_TEST_V2
     controls_update(&waveform_config);
+    controls_update_adsr(&adsr_param);
     #endif
 
     uint32_t now = HAL_GetTick();

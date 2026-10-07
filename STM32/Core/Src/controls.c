@@ -2,9 +2,23 @@
 #include "mux_adc.h"
 #include "stm32f4xx_hal.h"
 
+#include <math.h>
+
 #define CONTROL_SMOOTHING   0.15f
 #define BUTTON_DEBOUNCE_MS  25U
 #define ADC_MAX_VALUE       4095.0f
+
+/* ADSR pots — mux channels, check against PCB */
+#define ADSR_ATTACK_MUX_CH   2
+#define ADSR_DECAY_MUX_CH    3
+#define ADSR_SUSTAIN_MUX_CH  4
+#define ADSR_RELEASE_MUX_CH  5
+
+/* Time ranges for a full 0<->1 swing, pot fully left -> fully right */
+#define ADSR_MIN_MS          1.0f
+#define ADSR_ATTACK_MAX_MS   2000.0f
+#define ADSR_DECAY_MAX_MS    2000.0f
+#define ADSR_RELEASE_MAX_MS  4000.0f
 
 typedef struct {
     GPIO_PinState raw_state;
@@ -16,6 +30,10 @@ static DebouncedButton s_btn1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static float s_smoothed_rise  = 0.5f;
 static float s_smoothed_fall  = 0.5f;
+static float s_smoothed_attack  = 0.0f;
+static float s_smoothed_decay   = 0.0f;
+static float s_smoothed_sustain = 0.0f;
+static float s_smoothed_release = 0.0f;
 
 void controls_init(void) { /* mux and GPIO already inited by CubeMX */ }
 
@@ -41,4 +59,25 @@ void controls_update(WaveformConfig *cfg)
 
     update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0), &cfg->rise_shape);
     update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1), &cfg->fall_shape);
+}
+
+static float read_smoothed_pot(uint8_t mux_ch, float *smoothed)
+{
+    *smoothed += CONTROL_SMOOTHING * ((mux_read(mux_ch) / ADC_MAX_VALUE) - *smoothed);
+    return *smoothed;
+}
+
+/* Exponential so each part of the pot's turn feels equally useful:
+   with 1-2000ms, the middle of the pot is ~45ms rather than ~1000ms. */
+static uint32_t pot_to_ms(float pot, float max_ms)
+{
+    return (uint32_t)(ADSR_MIN_MS * powf(max_ms / ADSR_MIN_MS, pot) + 0.5f);
+}
+
+void controls_update_adsr(AdsrParam *adsr)
+{
+    adsr->attack_ms     = pot_to_ms(read_smoothed_pot(ADSR_ATTACK_MUX_CH, &s_smoothed_attack), ADSR_ATTACK_MAX_MS);
+    adsr->decay_ms      = pot_to_ms(read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay), ADSR_DECAY_MAX_MS);
+    adsr->sustain_level = read_smoothed_pot(ADSR_SUSTAIN_MUX_CH, &s_smoothed_sustain);
+    adsr->release_ms    = pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS);
 }

@@ -5,6 +5,9 @@
 
 typedef uint16_t wavegen_output_t;
 
+///Speaker center position, wavegen_output_t minus this is the signed amplitude
+#define WAVEGEN_OUTPUT_GROUND 175.0f
+
 typedef enum
 {
     WAVE_SINE = 0,

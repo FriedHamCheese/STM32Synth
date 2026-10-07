@@ -7,3 +7,4 @@ kicad/.history/
 STM32/.mxproject
 STM32/Core/gcc-unittest/test_main.exe
 STM32/Core/gcc-unittest/waveform.csv
+.DS_Store

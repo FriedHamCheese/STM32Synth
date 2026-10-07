@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 void test_volume_oscillation();
+void test_adsr();
 
 int main(void){
   sine_lookup_init();
@@ -21,6 +22,7 @@ int main(void){
     printf("Testing synth_comms.h...\n");
     test_process_keys();
     test_volume_oscillation();
+    test_adsr();
     return 0;
   }
 
