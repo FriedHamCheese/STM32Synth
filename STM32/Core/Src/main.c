@@ -44,6 +44,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define V1_TEST_V2
+#define TEST_SEQUENCE_STAGES 9   /* number of cases in the injection switch */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -196,7 +197,7 @@ int main(void)
       }
       
       test_stage++;
-      test_stage %= 5;
+      test_stage %= TEST_SEQUENCE_STAGES;
       last_interval_ms = now;
     }
     #endif
