@@ -25,6 +25,10 @@
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
 #define I2C_TIMEOUT_MS    2
 #define PRESS_THRESHOLD   300    /* signed ADC delta from baseline — tune per H3503 */
+/* Release only once the sensor has returned most of the way, so a value
+   hovering near PRESS_THRESHOLD (sensor noise, slow fingers) does not
+   chatter a note on and off. */
+#define RELEASE_THRESHOLD (PRESS_THRESHOLD - 100)
 #define STALE_TIMEOUT_MS  30
 #define MIDI_BASE_NOTE    48     /* C3 — key 0 on leftmost slave */
 

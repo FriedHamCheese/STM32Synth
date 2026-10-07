@@ -97,7 +97,7 @@ void process_keys(VoiceManager *vm,
                 g_key_velocity[s][k] = (int16_t)vel;
                 g_key_state[s][k]    = KEY_PRESSED;
                 note_on(vm, (uint16_t)(s * 12 + k), vel);
-            } else if (g_key_state[s][k] == KEY_PRESSED && depth <= PRESS_THRESHOLD) {
+            } else if (g_key_state[s][k] == KEY_PRESSED && depth <= RELEASE_THRESHOLD) {
                 g_key_state[s][k]    = KEY_IDLE;
                 g_press_moving[s][k] = 0;
                 note_off(vm, (uint16_t)(s * 12 + k));
