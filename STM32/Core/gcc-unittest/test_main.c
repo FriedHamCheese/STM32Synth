@@ -12,6 +12,7 @@
 #include <string.h>
 
 void test_volume_oscillation();
+void test_musical();
 
 int main(int argc, char **argv){
   sine_lookup_init();
@@ -22,6 +23,7 @@ int main(int argc, char **argv){
     printf("Testing synth_comms.h...\n");
     test_process_keys();
     test_volume_oscillation();
+    test_musical();
     return 0;
   }
 
