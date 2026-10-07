@@ -32,6 +32,8 @@
 #include "controls.h"
 #include "audio_out.h"
 #include "sine_lookup.h"
+#include "autoplay.h"
+
 #include <math.h>
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -55,10 +57,10 @@
 /* USER CODE BEGIN PV */
 WaveformConfig waveform_config =
 {
-    .rise_pct   = 0.5f,
-    .fall_pct   = 0.5f,
-    .rise_shape = WAVE_SINE,
-    .fall_shape = WAVE_SINE,
+    .rise_pct   = 0.50f,
+    .fall_pct   = 0.50f,
+    .rise_shape = WAVE_TRIANGLE,
+    .fall_shape = WAVE_TRIANGLE,
     .max_output = 350.0f
 };
 
@@ -66,6 +68,14 @@ VolumeOscillationParam volume_oscillator_param = {
     .frequency = 1.0f/2.0f,
     .completion = 0.0f,
     .strength = 0.00f
+};
+
+Autoplay autoplay = {
+  .steps = virtinst,
+  .step_started_ms = 0,
+  .length = 16, 
+  .index = 0,
+  .playing = false
 };
 
 VoiceManager voice_manager;
@@ -138,6 +148,7 @@ int main(void)
   memset((void*)g_baseline, 0, sizeof(g_baseline));
   uint32_t last_interval_ms = 0;
   uint8_t test_stage = 0;
+  autoplay_start(&autoplay, &voice_manager, HAL_GetTick());
   #endif
   
   /* USER CODE END 2 */
@@ -165,17 +176,17 @@ int main(void)
     
     #if defined(V1_TEST_V2) && defined(IS_MASTER)
     const int16_t trigger_keypress = PRESS_THRESHOLD + 1;
-    
+/*
     if(now - last_interval_ms >= 2000){
       switch (test_stage) {
         case 0:
-        	g_keys[3][0] = trigger_keypress;
+        	g_keys[4][0] = trigger_keypress;
         	break;
         case 1:
-        	g_keys[3][4] = trigger_keypress;
+        	g_keys[4][4] = trigger_keypress;
         	break;
         case 2:
-        	g_keys[3][7] = trigger_keypress;
+        	g_keys[4][7] = trigger_keypress;
         	break;
         case 3:
         	g_keys[5][0] = trigger_keypress;
@@ -198,9 +209,10 @@ int main(void)
       }
       
       test_stage++;
-      test_stage %= 5;
+      test_stage %= 6;
       last_interval_ms = now;
-    }
+    }*/
+    autoplay_update(&autoplay, &voice_manager, now);
     #endif
     
     /* USER CODE END WHILE */
