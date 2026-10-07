@@ -9,12 +9,13 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 void test_volume_oscillation();
 
-int main(void){
+int main(int argc, char **argv){
   sine_lookup_init();
-  const uint8_t run_test_suite = 0;
+  const uint8_t run_test_suite = argc > 1 && strcmp(argv[1], "--test") == 0;
   
   if(run_test_suite){
     printf("Unit tests using C asserts. All test passes if no assert message appears.\n");
