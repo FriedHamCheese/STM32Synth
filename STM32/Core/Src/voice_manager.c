@@ -148,7 +148,8 @@ float get_key_frequency(uint8_t key_id){
   const uint8_t octave_from_octave_0 = key_id / keys_per_octave;
   const uint8_t key = key_id % keys_per_octave;
   
-  //An octave higher is 2x the frequency
-  const uint8_t octave_frequency_multiplier = 1 << (octave_from_octave_0 + 1);
+  //An octave higher is 2x the frequency. Use a 32-bit type: a uint8_t
+  //multiplier silently truncates to 0 for key_id >= 84 (octave >= 7).
+  const uint32_t octave_frequency_multiplier = 1u << (octave_from_octave_0 + 1);
   return frequencies_at_octave_0[key] * (float)octave_frequency_multiplier;
 } 
