@@ -48,13 +48,15 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
     {
         if (!manager->voices[i].active)
         {
-            manager->voices[i].active = 1;
+            /* Initialise every field before publishing the voice as active,
+               so the audio ISR can never observe a half-initialised voice. */
             manager->voices[i].key_id = key_id;
             manager->voices[i].oscillator.waveform_completion_ratio = 0.0f;
             manager->voices[i].oscillator.waveform_completion_increment =
                 frequency_hz / manager->sample_rate_hz;
 
             manager->active_voice_count++;
+            manager->voices[i].active = 1;
 
             return 1;
         }
@@ -89,7 +91,9 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     float phase;
     uint8_t voice_count = 0;
 
-    if (manager == 0 || config == 0 || manager->active_voice_count == 0)
+    /* Silence is derived from the per-voice 'active' flags below, not from
+       active_voice_count, which is updated separately and can lag the ISR. */
+    if (manager == 0 || config == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
 
     for (int i = 0; i < MAX_VOICES; i++)
