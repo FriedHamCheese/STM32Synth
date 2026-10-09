@@ -68,43 +68,38 @@ float adsr_get_volume(AdsrState *state, const AdsrParam *param, uint32_t now_ms)
     float budget_ms = (float)(now_ms - state->last_ms);
     state->last_ms = now_ms;
 
-    //Loop so time left over from a finished stage carries into the next, e.g. 0ms attack goes into decay in the same call
-    for (;;)
+    //Runs in the 48kHz ISR: no loops or waiting, just one pass through the stages.
+    //A finished stage falls through to the next with the leftover time, e.g. 0ms attack goes into decay in the same call.
+    if (state->stage == ADSR_ATTACK)
     {
-        switch (state->stage)
-        {
-            case ADSR_ATTACK:
-                if (approach(&state->volume, 1.0f, &budget_ms, param->attack_ms))
-                {
-                    state->stage = ADSR_DECAY;
-                    continue;
-                }
-                return state->volume;
-
-            case ADSR_DECAY:
-                if (approach(&state->volume, sustain_level, &budget_ms, param->decay_ms))
-                {
-                    state->stage = ADSR_SUSTAIN;
-                    continue;
-                }
-                return state->volume;
-
-            case ADSR_SUSTAIN:
-                //Glides to a changed sustain pot instead of jumping
-                approach(&state->volume, sustain_level, &budget_ms, param->decay_ms);
-                return state->volume;
-
-            case ADSR_RELEASE:
-                if (approach(&state->volume, 0.0f, &budget_ms, param->release_ms))
-                    state->stage = ADSR_IDLE;
-                return state->volume;
-
-            case ADSR_IDLE:
-            default:
-                state->volume = 0.0f;
-                return 0.0f;
-        }
+        if (!approach(&state->volume, 1.0f, &budget_ms, param->attack_ms))
+            return state->volume;
+        state->stage = ADSR_DECAY;
     }
+
+    if (state->stage == ADSR_DECAY)
+    {
+        if (!approach(&state->volume, sustain_level, &budget_ms, param->decay_ms))
+            return state->volume;
+        state->stage = ADSR_SUSTAIN;
+    }
+
+    if (state->stage == ADSR_SUSTAIN)
+    {
+        //Glides to a changed sustain pot instead of jumping
+        approach(&state->volume, sustain_level, &budget_ms, param->decay_ms);
+        return state->volume;
+    }
+
+    if (state->stage == ADSR_RELEASE)
+    {
+        if (approach(&state->volume, 0.0f, &budget_ms, param->release_ms))
+            state->stage = ADSR_IDLE;
+        return state->volume;
+    }
+
+    state->volume = 0.0f;
+    return 0.0f;
 }
 
 uint8_t adsr_is_active(const AdsrState *state)
