@@ -1,105 +1,107 @@
 #include "adsr.h"
 #include "sine_lookup.h"
 
-#include <math.h>
-
 //Used when no AdsrParam is given: instant attack, full sustain, instant release, same as having no envelope
 static const AdsrParam no_envelope = {
-    .attack_ms = 0,
-    .decay_ms = 0,
+    .attack_step = 1.0f,
+    .decay_step = 1.0f,
     .sustain_level = 1.0f,
-    .release_ms = 0
+    .release_step = 1.0f
 };
+
+//Volume change per sample for a full 0<->1 swing over time_ms, capped at 1.0 (instant)
+static float time_to_step(uint32_t time_ms, float sample_period_ms)
+{
+    if ((float)time_ms <= sample_period_ms)
+        return 1.0f;
+    return sample_period_ms / (float)time_ms;
+}
+
+void adsr_set_params(
+    AdsrParam *param,
+    uint32_t attack_ms,
+    uint32_t decay_ms,
+    float sustain_level,
+    uint32_t release_ms,
+    float sample_period
+){
+    const float sample_period_ms = sample_period * 1000.0f;
+
+    param->attack_step = time_to_step(attack_ms, sample_period_ms);
+    param->decay_step = time_to_step(decay_ms, sample_period_ms);
+    param->sustain_level = clamp01(sustain_level);
+    param->release_step = time_to_step(release_ms, sample_period_ms);
+}
 
 void adsr_init(AdsrState *state)
 {
     state->stage = ADSR_IDLE;
-    state->last_ms = 0;
     state->volume = 0.0f;
 }
 
-void adsr_note_on(AdsrState *state, const AdsrParam *param, uint32_t now_ms)
+void adsr_note_on(AdsrState *state)
 {
-    //Bring volume up to now under the old stage first, so attack starts from the right volume
-    adsr_get_volume(state, param, now_ms);
     state->stage = ADSR_ATTACK;
 }
 
-void adsr_note_off(AdsrState *state, const AdsrParam *param, uint32_t now_ms)
+void adsr_note_off(AdsrState *state)
 {
-    if (state->stage == ADSR_IDLE || state->stage == ADSR_RELEASE)
+    if (state->stage == ADSR_IDLE)
         return;
-    adsr_get_volume(state, param, now_ms);
     state->stage = ADSR_RELEASE;
 }
 
-/**
-  Moves volume toward target at a rate of 1.0 per full_scale_ms, spending up to *budget_ms.
-  Returns 1 if target was reached, with the unspent time left in *budget_ms for the next stage.
-  Returns 0 if the budget ran out first. A 0ms full_scale_ms reaches target instantly.
-*/
-static uint8_t approach(float *volume, float target, float *budget_ms, uint32_t full_scale_ms)
+//Steps volume toward target, landing exactly on target instead of overshooting it
+static float move_toward(float volume, float target, float step)
 {
-    const float needed_ms = fabsf(target - *volume) * (float)full_scale_ms;
-
-    if (*budget_ms >= needed_ms)
-    {
-        *volume = target;
-        *budget_ms -= needed_ms;
-        return 1;
-    }
-
-    //Budget is only non-zero once per ms tick, so this division doesn't run every sample
-    if (*budget_ms <= 0.0f)
-        return 0;
-
-    const float step = *budget_ms / (float)full_scale_ms;
-    *volume += (target > *volume) ? step : -step;
-    *budget_ms = 0.0f;
-    return 0;
+    if (volume < target)
+        return (volume + step < target) ? volume + step : target;
+    return (volume - step > target) ? volume - step : target;
 }
 
-float adsr_get_volume(AdsrState *state, const AdsrParam *param, uint32_t now_ms)
+float adsr_get_volume(AdsrState *state, const AdsrParam *param)
 {
     if (param == 0)
         param = &no_envelope;
 
-    const float sustain_level = clamp01(param->sustain_level);
-    float budget_ms = (float)(now_ms - state->last_ms);
-    state->last_ms = now_ms;
-
-    //Runs in the 48kHz ISR: no loops or waiting, just one pass through the stages.
-    //A finished stage falls through to the next with the leftover time, e.g. 0ms attack goes into decay in the same call.
-    if (state->stage == ADSR_ATTACK)
+    switch (state->stage)
     {
-        if (!approach(&state->volume, 1.0f, &budget_ms, param->attack_ms))
-            return state->volume;
-        state->stage = ADSR_DECAY;
+        case ADSR_ATTACK:
+            state->volume += param->attack_step;
+            if (state->volume >= 1.0f)
+            {
+                state->volume = 1.0f;
+                state->stage = ADSR_DECAY;
+            }
+            break;
+
+        case ADSR_DECAY:
+            state->volume = move_toward(state->volume, param->sustain_level, param->decay_step);
+            if (state->volume == param->sustain_level)
+                state->stage = ADSR_SUSTAIN;
+            break;
+
+        case ADSR_SUSTAIN:
+            //Glides to a changed sustain pot instead of jumping
+            state->volume = move_toward(state->volume, param->sustain_level, param->decay_step);
+            break;
+
+        case ADSR_RELEASE:
+            state->volume -= param->release_step;
+            if (state->volume <= 0.0f)
+            {
+                state->volume = 0.0f;
+                state->stage = ADSR_IDLE;
+            }
+            break;
+
+        case ADSR_IDLE:
+        default:
+            state->volume = 0.0f;
+            break;
     }
 
-    if (state->stage == ADSR_DECAY)
-    {
-        if (!approach(&state->volume, sustain_level, &budget_ms, param->decay_ms))
-            return state->volume;
-        state->stage = ADSR_SUSTAIN;
-    }
-
-    if (state->stage == ADSR_SUSTAIN)
-    {
-        //Glides to a changed sustain pot instead of jumping
-        approach(&state->volume, sustain_level, &budget_ms, param->decay_ms);
-        return state->volume;
-    }
-
-    if (state->stage == ADSR_RELEASE)
-    {
-        if (approach(&state->volume, 0.0f, &budget_ms, param->release_ms))
-            state->stage = ADSR_IDLE;
-        return state->volume;
-    }
-
-    state->volume = 0.0f;
-    return 0.0f;
+    return state->volume;
 }
 
 uint8_t adsr_is_active(const AdsrState *state)
@@ -107,8 +109,7 @@ uint8_t adsr_is_active(const AdsrState *state)
     return state->stage != ADSR_IDLE;
 }
 
-wavegen_output_t adsr_apply_volume(wavegen_output_t sample, float volume)
+float adsr_apply_volume(wavegen_output_t sample, float volume)
 {
-    const float amplitude = (float)sample - WAVEGEN_OUTPUT_GROUND;
-    return (wavegen_output_t)(amplitude * volume + WAVEGEN_OUTPUT_GROUND);
+    return ((float)sample - WAVEGEN_OUTPUT_GROUND) * volume;
 }

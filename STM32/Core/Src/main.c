@@ -69,12 +69,8 @@ VolumeOscillationParam volume_oscillator_param = {
     .strength = 0.00f
 };
 
-AdsrParam adsr_param = {
-    .attack_ms = 10,
-    .decay_ms = 200,
-    .sustain_level = 0.6f,
-    .release_ms = 300
-};
+//Set with adsr_set_params() at startup and by controls_update_adsr()
+AdsrParam adsr_param;
 
 VoiceManager voice_manager;
 /* USER CODE END PV */
@@ -127,7 +123,8 @@ int main(void)
   
   #ifdef IS_MASTER
   sine_lookup_init();
-  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param, HAL_GetTick);
+  adsr_set_params(&adsr_param, 10, 200, 0.6f, 300, AUDIO_SAMPLE_PERIOD);
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
   audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);

@@ -26,16 +26,13 @@ typedef struct
     uint8_t active_voice_count;
     ///NULL plays notes with no envelope
     const AdsrParam *adsr_param;
-    ///Millisecond clock for envelopes, HAL_GetTick on the board
-    uint32_t (*get_ms)(void);
 } VoiceManager;
 
 void voice_manager_init(
     VoiceManager *manager,
     float sample_rate_hz,
     float max_frequency_hz,
-    const AdsrParam *adsr_param,
-    uint32_t (*get_ms)(void)
+    const AdsrParam *adsr_param
 );
 
 ///Starts a voice for key_id, or retriggers its attack if the key is still releasing.

@@ -20,8 +20,7 @@ void voice_manager_init(
     VoiceManager *manager,
     float sample_rate_hz,
     float max_frequency_hz,
-    const AdsrParam *adsr_param,
-    uint32_t (*get_ms)(void)
+    const AdsrParam *adsr_param
 ){
     if (manager == 0)
         return;
@@ -30,7 +29,6 @@ void voice_manager_init(
     manager->max_frequency_hz = max_frequency_hz;
     manager->active_voice_count = 0;
     manager->adsr_param = adsr_param;
-    manager->get_ms = get_ms;
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
@@ -47,7 +45,6 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
     uint8_t started = 0;
 
     if (manager == 0 ||
-        manager->get_ms == 0 ||
         manager->sample_rate_hz <= 0.0f ||
         manager->max_frequency_hz <= 0.0f
     )
@@ -58,14 +55,13 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
         frequency_hz = manager->max_frequency_hz;
 
     VOICE_LOCK();
-    const uint32_t now_ms = manager->get_ms();
 
     //Key still has a voice (it's releasing), retrigger attack from its current volume
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active && manager->voices[i].key_id == key_id)
         {
-            adsr_note_on(&manager->voices[i].envelope, manager->adsr_param, now_ms);
+            adsr_note_on(&manager->voices[i].envelope);
             started = 1;
             break;
         }
@@ -80,7 +76,7 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
             manager->voices[i].oscillator.waveform_completion_increment =
                 frequency_hz / manager->sample_rate_hz;
             adsr_init(&manager->voices[i].envelope);
-            adsr_note_on(&manager->voices[i].envelope, manager->adsr_param, now_ms);
+            adsr_note_on(&manager->voices[i].envelope);
             manager->voices[i].active = 1;
             started = 1;
         }
@@ -92,7 +88,7 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
 
 void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
 {
-    if (manager == 0 || manager->get_ms == 0)
+    if (manager == 0)
         return;
 
     VOICE_LOCK();
@@ -101,7 +97,7 @@ void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
         if (manager->voices[i].active && manager->voices[i].key_id == key_id)
         {
             //Voice stays active until release finishes, get_sample frees it
-            adsr_note_off(&manager->voices[i].envelope, manager->adsr_param, manager->get_ms());
+            adsr_note_off(&manager->voices[i].envelope);
             break;
         }
     }
@@ -111,21 +107,18 @@ void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
 wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformConfig *config)
 {
     float mixed_sample = 0.0f;
-    float sample;
     float phase;
     float volume;
     uint8_t voice_count = 0;
 
-    if (manager == 0 || config == 0 || manager->get_ms == 0)
+    if (manager == 0 || config == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
-
-    const uint32_t now_ms = manager->get_ms();
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active)
         {
-            volume = adsr_get_volume(&manager->voices[i].envelope, manager->adsr_param, now_ms);
+            volume = adsr_get_volume(&manager->voices[i].envelope, manager->adsr_param);
 
             if (!adsr_is_active(&manager->voices[i].envelope))
             {
@@ -135,9 +128,8 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
 
             phase = manager->voices[i].oscillator.waveform_completion_ratio;
 
-            sample = (float)adsr_apply_volume(waveform_get_point(phase, config), volume);
-
-            mixed_sample += sample - OUTPUT_MIDPOINT;
+            //Mixed as float amplitude, rounded once at the end
+            mixed_sample += adsr_apply_volume(waveform_get_point(phase, config), volume);
 
             phase += manager->voices[i].oscillator.waveform_completion_increment;
 

@@ -1,5 +1,6 @@
 #include "controls.h"
 #include "mux_adc.h"
+#include "audio_out.h"
 #include "stm32f4xx_hal.h"
 
 #include <math.h>
@@ -76,8 +77,12 @@ static uint32_t pot_to_ms(float pot, float max_ms)
 
 void controls_update_adsr(AdsrParam *adsr)
 {
-    adsr->attack_ms     = pot_to_ms(read_smoothed_pot(ADSR_ATTACK_MUX_CH, &s_smoothed_attack), ADSR_ATTACK_MAX_MS);
-    adsr->decay_ms      = pot_to_ms(read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay), ADSR_DECAY_MAX_MS);
-    adsr->sustain_level = read_smoothed_pot(ADSR_SUSTAIN_MUX_CH, &s_smoothed_sustain);
-    adsr->release_ms    = pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS);
+    adsr_set_params(
+        adsr,
+        pot_to_ms(read_smoothed_pot(ADSR_ATTACK_MUX_CH, &s_smoothed_attack), ADSR_ATTACK_MAX_MS),
+        pot_to_ms(read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay), ADSR_DECAY_MAX_MS),
+        read_smoothed_pot(ADSR_SUSTAIN_MUX_CH, &s_smoothed_sustain),
+        pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS),
+        AUDIO_SAMPLE_PERIOD
+    );
 }
