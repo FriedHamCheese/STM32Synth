@@ -62,15 +62,14 @@ typedef struct
 
 /**
   Sets the envelope from stage times in ms, 0ms means instant.
-  Pass AUDIO_SAMPLE_PERIOD as sample_period (seconds per sample), like get_oscillation_completion().
 */
 void adsr_set_params(
     AdsrParam *param,
     uint32_t attack_ms,
     uint32_t decay_ms,
     float sustain_level,
-    uint32_t release_ms,
-    float sample_period
+  uint32_t release_ms,
+  float sample_rate_hz
 );
 
 void adsr_init(AdsrState *state);

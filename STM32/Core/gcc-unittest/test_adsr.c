@@ -72,7 +72,7 @@ static void test_adsr_changes_every_sample(){
 static void test_adsr_1ms_attack_ramps(){
   printf("\ttest_adsr_1ms_attack_ramps()...\n");
   AdsrParam param;
-  adsr_set_params(&param, 1, 20, 0.5f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 1, 20, 0.5f, 40, AUDIO_SAMPLE_RATE_HZ);
   AdsrState state;
   adsr_init(&state);
 
@@ -143,7 +143,7 @@ static void test_adsr_times_are_stage_lengths(){
   const float sustains[] = {0.0f, 0.2f, 0.5f, 0.8f};
   for (int i = 0; i < 4; i++){
     AdsrParam param;
-    adsr_set_params(&param, 10, 20, sustains[i], 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, sustains[i], 40, AUDIO_SAMPLE_RATE_HZ);
     test_adsr_stage_takes_its_time(&param, sustains[i]);
   }
 }
@@ -157,7 +157,7 @@ static void test_adsr_knob_change_no_jump(){
   //Attack 10ms -> 100ms halfway through attack, keeps rising from 0.5 slower
   adsr_note_on(&state);
   assert(float_within_tolerance(run_ms(&state, &param, 5), 0.5f));
-  adsr_set_params(&param, 100, 20, 0.5f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 100, 20, 0.5f, 40, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.5f));
   assert(float_within_tolerance(run_ms(&state, &param, 10), 0.6f));
 
@@ -167,14 +167,14 @@ static void test_adsr_knob_change_no_jump(){
   adsr_note_on(&state);
   assert(float_within_tolerance(run_ms(&state, &param, 10), 1.0f));
   assert(float_within_tolerance(run_ms(&state, &param, 10), 0.75f));
-  adsr_set_params(&param, 10, 20, 1.0f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, 1.0f, 40, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_ms(&state, &param, 6), 1.0f));
   assert(state.stage == ADSR_SUSTAIN);
 
   //Sustain 1.0 -> 0.5 -> 0.7 while held, glides at a full 0<->1 per decay_ms
-  adsr_set_params(&param, 10, 20, 0.5f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, 0.5f, 40, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_ms(&state, &param, 1000), 0.5f));
-  adsr_set_params(&param, 10, 20, 0.7f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, 0.7f, 40, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.5f));
   assert(float_within_tolerance(run_ms(&state, &param, 2), 0.6f));
   assert(float_within_tolerance(run_ms(&state, &param, 10), 0.7f));
@@ -182,12 +182,12 @@ static void test_adsr_knob_change_no_jump(){
   //Release 40ms -> 400ms mid-release, keeps falling from where it was, slower
   adsr_note_off(&state);
   assert(float_within_tolerance(run_ms(&state, &param, 10), 0.525f));
-  adsr_set_params(&param, 10, 20, 0.7f, 400, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, 0.7f, 400, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.525f));
   assert(float_within_tolerance(run_ms(&state, &param, 40), 0.455f));
 
   //Release 400ms -> 4ms, no instant cut, just falls faster
-  adsr_set_params(&param, 10, 20, 0.7f, 4, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&param, 10, 20, 0.7f, 4, AUDIO_SAMPLE_RATE_HZ);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.455f - 0.7f / (4 * SAMPLES_PER_MS)));
   assert(adsr_is_active(&state));
   assert(float_within_tolerance(run_samples(&state, &param, SAMPLES_PER_MS - 1), 0.28f));
@@ -272,7 +272,7 @@ static void test_adsr_null_param_is_no_envelope(){
 
 void test_adsr(){
   printf("test_adsr()\n");
-  adsr_set_params(&test_param, 10, 20, 0.5f, 40, AUDIO_SAMPLE_PERIOD);
+  adsr_set_params(&test_param, 10, 20, 0.5f, 40, AUDIO_SAMPLE_RATE_HZ);
   test_adsr_full_envelope();
   test_adsr_changes_every_sample();
   test_adsr_1ms_attack_ramps();

@@ -23,9 +23,9 @@ void adsr_set_params(
     uint32_t decay_ms,
     float sustain_level,
     uint32_t release_ms,
-    float sample_period
+    float sample_rate_hz
 ){
-    const float sample_period_ms = sample_period * 1000.0f;
+    const float sample_period_ms = 1000.0f / sample_rate_hz;
 
     param->attack_rate = time_to_rate(attack_ms, sample_period_ms);
     param->decay_rate = time_to_rate(decay_ms, sample_period_ms);
@@ -97,7 +97,7 @@ float adsr_get_volume(AdsrState *state, const AdsrParam *param)
 
         case ADSR_SUSTAIN:
             //Glides to a changed sustain pot instead of jumping
-            state->volume = move_toward(state->volume, param->sustain_level, param->decay_rate);
+            //state->volume = move_toward(state->volume, param->sustain_level, param->decay_rate);
             break;
 
         case ADSR_RELEASE:

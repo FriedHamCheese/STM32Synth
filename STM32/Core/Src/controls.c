@@ -83,6 +83,6 @@ void controls_update_adsr(AdsrParam *adsr)
         pot_to_ms(read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay), ADSR_DECAY_MAX_MS),
         read_smoothed_pot(ADSR_SUSTAIN_MUX_CH, &s_smoothed_sustain),
         pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS),
-        AUDIO_SAMPLE_PERIOD
+        AUDIO_SAMPLE_RATE_HZ
     );
 }

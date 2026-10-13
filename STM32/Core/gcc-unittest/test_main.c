@@ -15,7 +15,7 @@ void test_adsr();
 
 int main(void){
   sine_lookup_init();
-  const uint8_t run_test_suite = 0;
+  const uint8_t run_test_suite = 1;
   
   if(run_test_suite){
     printf("Unit tests using C asserts. All test passes if no assert message appears.\n");
