@@ -32,8 +32,8 @@
 #include "controls.h"
 #include "audio_out.h"
 #include "sine_lookup.h"
+#include "adsr.h"
 #include "autoplay.h"
-
 #include <math.h>
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -77,6 +77,8 @@ Autoplay autoplay = {
   .index = 0,
   .playing = false
 };
+//Set with adsr_set_params() at startup and by controls_update_adsr()
+AdsrParam adsr_param;
 
 VoiceManager voice_manager;
 //Master volume can be from 0.0 to 10.0x, overdrive woo
@@ -131,8 +133,9 @@ int main(void)
   
   #ifdef IS_MASTER
   sine_lookup_init();
-  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ);
-  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
+  adsr_set_params(&adsr_param, 5, 1500, 0.00f, 600, AUDIO_SAMPLE_RATE_HZ);
+  voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -149,6 +152,9 @@ int main(void)
   uint32_t last_interval_ms = 0;
   uint8_t test_stage = 0;
   autoplay_start(&autoplay, &voice_manager, HAL_GetTick());
+  uint8_t test_key_valid = 0;
+  uint8_t test_key_slave = 0;
+  uint8_t test_key_index = 0;
   #endif
   
   /* USER CODE END 2 */
@@ -160,6 +166,7 @@ int main(void)
   {
     #ifndef V1_TEST_V2
     controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
+    controls_update_adsr(&adsr_param);
     #endif
 
     uint32_t now = HAL_GetTick();
@@ -178,38 +185,27 @@ int main(void)
     const int16_t trigger_keypress = PRESS_THRESHOLD + 1;
 /*
     if(now - last_interval_ms >= 2000){
+      //Make the test monophonic: release the previous key before pressing the next one.
+      if (test_key_valid)
+        g_keys[test_key_slave][test_key_index] = 0;
+
+      //The assignment above must be the new key, so restore it after clearing the old one.
       switch (test_stage) {
-        case 0:
-        	g_keys[4][0] = trigger_keypress;
-        	break;
-        case 1:
-        	g_keys[4][4] = trigger_keypress;
-        	break;
-        case 2:
-        	g_keys[4][7] = trigger_keypress;
-        	break;
-        case 3:
-        	g_keys[5][0] = trigger_keypress;
-        	break;
-        case 4:
-        	g_keys[5][4] = trigger_keypress;
-        	break;
-        case 5:
-        	g_keys[5][7] = trigger_keypress;
-        	break;
-        case 6:
-        	g_keys[6][0] = trigger_keypress;
-        	break;
-        case 7:
-        	g_keys[6][4] = trigger_keypress;
-        	break;
-        case 8:
-        	g_keys[6][7] = trigger_keypress;
-        	break;
+        case 0: test_key_slave = 3; test_key_index = 0; break;
+        case 1: test_key_slave = 3; test_key_index = 4; break;
+        case 2: test_key_slave = 3; test_key_index = 7; break;
+        case 3: test_key_slave = 5; test_key_index = 0; break;
+        case 4: test_key_slave = 5; test_key_index = 4; break;
+        case 5: test_key_slave = 5; test_key_index = 7; break;
+        case 6: test_key_slave = 6; test_key_index = 0; break;
+        case 7: test_key_slave = 6; test_key_index = 4; break;
+        case 8: test_key_slave = 6; test_key_index = 7; break;
       }
+      g_keys[test_key_slave][test_key_index] = trigger_keypress;
+      test_key_valid = 1;
       
       test_stage++;
-      test_stage %= 6;
+      test_stage %= 8;
       last_interval_ms = now;
     }*/
     autoplay_update(&autoplay, &voice_manager, now);

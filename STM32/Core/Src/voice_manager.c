@@ -5,14 +5,30 @@
 #define OUTPUT_MIN 0.0f
 #define OUTPUT_MAX 350.0f
 
-void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_frequency_hz)
-{
+//note_on/note_off run in the main loop while get_sample runs in the 48kHz TIM4 ISR,
+//block the ISR while a voice is being changed so it never sees a half-written voice.
+#ifdef PC_UNITTEST
+#define VOICE_LOCK()
+#define VOICE_UNLOCK()
+#else
+#include "stm32f4xx_hal.h"
+#define VOICE_LOCK()   uint32_t primask_ = __get_PRIMASK(); __disable_irq()
+#define VOICE_UNLOCK() __set_PRIMASK(primask_)
+#endif
+
+void voice_manager_init(
+    VoiceManager *manager,
+    float sample_rate_hz,
+    float max_frequency_hz,
+    const AdsrParam *adsr_param
+){
     if (manager == 0)
         return;
 
     manager->sample_rate_hz = sample_rate_hz;
     manager->max_frequency_hz = max_frequency_hz;
     manager->active_voice_count = 0;
+    manager->adsr_param = adsr_param;
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
@@ -20,47 +36,54 @@ void voice_manager_init(VoiceManager *manager, float sample_rate_hz, float max_f
         manager->voices[i].key_id = 0;
         manager->voices[i].oscillator.waveform_completion_ratio = 0.0f;
         manager->voices[i].oscillator.waveform_completion_increment = 0.0f;
+        adsr_init(&manager->voices[i].envelope);
     }
 }
 
 uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t velocity)
 {
+    uint8_t started = 0;
+
     if (manager == 0 ||
         manager->sample_rate_hz <= 0.0f ||
         manager->max_frequency_hz <= 0.0f
     )
         return 0;
 
-    for (int i = 0; i < MAX_VOICES; i++)
-    {
-        if (manager->voices[i].active && manager->voices[i].key_id == key_id)
-            return 0;
-    }
-
-    if (manager->active_voice_count >= MAX_VOICES)
-        return 0;
-
     float frequency_hz = get_key_frequency(key_id);
     if (frequency_hz > manager->max_frequency_hz)
         frequency_hz = manager->max_frequency_hz;
 
+    VOICE_LOCK();
+
+    //Key still has a voice (it's releasing), retrigger attack from its current volume
     for (int i = 0; i < MAX_VOICES; i++)
+    {
+        if (manager->voices[i].active && manager->voices[i].key_id == key_id)
+        {
+            adsr_note_on(&manager->voices[i].envelope);
+            started = 1;
+            break;
+        }
+    }
+
+    for (int i = 0; i < MAX_VOICES && !started; i++)
     {
         if (!manager->voices[i].active)
         {
-            manager->voices[i].active = 1;
             manager->voices[i].key_id = key_id;
             manager->voices[i].oscillator.waveform_completion_ratio = 0.0f;
             manager->voices[i].oscillator.waveform_completion_increment =
                 frequency_hz / manager->sample_rate_hz;
-
-            manager->active_voice_count++;
-
-            return 1;
+            adsr_init(&manager->voices[i].envelope);
+            adsr_note_on(&manager->voices[i].envelope);
+            manager->voices[i].active = 1;
+            started = 1;
         }
     }
+    VOICE_UNLOCK();
 
-    return 0;
+    return started;
 }
 
 void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
@@ -68,39 +91,45 @@ void voice_manager_note_off(VoiceManager *manager, uint16_t key_id)
     if (manager == 0)
         return;
 
+    VOICE_LOCK();
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active && manager->voices[i].key_id == key_id)
         {
-            manager->voices[i].active = 0;
-
-            if (manager->active_voice_count > 0)
-                manager->active_voice_count--;
-
-            return;
+            //Voice stays active until release finishes, get_sample frees it
+            adsr_note_off(&manager->voices[i].envelope);
+            break;
         }
     }
+    VOICE_UNLOCK();
 }
 
 wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformConfig *config)
 {
     float mixed_sample = 0.0f;
-    float sample;
     float phase;
+    float volume;
     uint8_t voice_count = 0;
 
-    if (manager == 0 || config == 0 || manager->active_voice_count == 0)
+    if (manager == 0 || config == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
 
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active)
         {
+            volume = adsr_get_volume(&manager->voices[i].envelope, manager->adsr_param);
+
+            if (!adsr_is_active(&manager->voices[i].envelope))
+            {
+                manager->voices[i].active = 0;
+                continue;
+            }
+
             phase = manager->voices[i].oscillator.waveform_completion_ratio;
 
-            sample = (float)waveform_get_point(phase, config);
-
-            mixed_sample += sample - OUTPUT_MIDPOINT;
+            //Mixed as float amplitude, rounded once at the end
+            mixed_sample += adsr_apply_volume(waveform_get_point(phase, config), volume);
 
             phase += manager->voices[i].oscillator.waveform_completion_increment;
 
@@ -112,6 +141,8 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
             voice_count++;
         }
     }
+
+    manager->active_voice_count = voice_count;
 
     if (voice_count == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
