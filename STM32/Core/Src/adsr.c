@@ -3,14 +3,14 @@
 
 //Used when no AdsrParam is given: instant attack, full sustain, instant release, same as having no envelope
 static const AdsrParam no_envelope = {
-    .attack_step = 1.0f,
-    .decay_step = 1.0f,
+    .attack_rate = 1.0f,
+    .decay_rate = 1.0f,
     .sustain_level = 1.0f,
-    .release_step = 1.0f
+    .release_rate = 1.0f
 };
 
-//Volume change per sample for a full 0<->1 swing over time_ms, capped at 1.0 (instant)
-static float time_to_step(uint32_t time_ms, float sample_period_ms)
+//Fraction of a time_ms long stage completed per sample, capped at 1.0 (instant)
+static float time_to_rate(uint32_t time_ms, float sample_period_ms)
 {
     if ((float)time_ms <= sample_period_ms)
         return 1.0f;
@@ -27,16 +27,17 @@ void adsr_set_params(
 ){
     const float sample_period_ms = sample_period * 1000.0f;
 
-    param->attack_step = time_to_step(attack_ms, sample_period_ms);
-    param->decay_step = time_to_step(decay_ms, sample_period_ms);
+    param->attack_rate = time_to_rate(attack_ms, sample_period_ms);
+    param->decay_rate = time_to_rate(decay_ms, sample_period_ms);
     param->sustain_level = clamp01(sustain_level);
-    param->release_step = time_to_step(release_ms, sample_period_ms);
+    param->release_rate = time_to_rate(release_ms, sample_period_ms);
 }
 
 void adsr_init(AdsrState *state)
 {
     state->stage = ADSR_IDLE;
     state->volume = 0.0f;
+    state->release_start_volume = 0.0f;
 }
 
 void adsr_note_on(AdsrState *state)
@@ -46,9 +47,10 @@ void adsr_note_on(AdsrState *state)
 
 void adsr_note_off(AdsrState *state)
 {
-    if (state->stage == ADSR_IDLE)
+    if (state->stage == ADSR_IDLE || state->stage == ADSR_RELEASE)
         return;
     state->stage = ADSR_RELEASE;
+    state->release_start_volume = state->volume;
 }
 
 //Steps volume toward target, landing exactly on target instead of overshooting it
@@ -67,7 +69,8 @@ float adsr_get_volume(AdsrState *state, const AdsrParam *param)
     switch (state->stage)
     {
         case ADSR_ATTACK:
-            state->volume += param->attack_step;
+            //0 -> 1 is the whole attack, so the rate is also the volume step
+            state->volume += param->attack_rate;
             if (state->volume >= 1.0f)
             {
                 state->volume = 1.0f;
@@ -76,18 +79,30 @@ float adsr_get_volume(AdsrState *state, const AdsrParam *param)
             break;
 
         case ADSR_DECAY:
-            state->volume = move_toward(state->volume, param->sustain_level, param->decay_step);
+            //Sustain pot turned above the current volume, nothing left to decay
+            if (state->volume <= param->sustain_level)
+            {
+                state->stage = ADSR_SUSTAIN;
+                break;
+            }
+            //Step scales with the distance 1 -> sustain so decay takes decay_ms at any sustain level
+            state->volume = move_toward(
+                state->volume,
+                param->sustain_level,
+                (1.0f - param->sustain_level) * param->decay_rate
+            );
             if (state->volume == param->sustain_level)
                 state->stage = ADSR_SUSTAIN;
             break;
 
         case ADSR_SUSTAIN:
             //Glides to a changed sustain pot instead of jumping
-            state->volume = move_toward(state->volume, param->sustain_level, param->decay_step);
+            state->volume = move_toward(state->volume, param->sustain_level, param->decay_rate);
             break;
 
         case ADSR_RELEASE:
-            state->volume -= param->release_step;
+            //Step scales with the release start volume so release takes release_ms from any volume
+            state->volume -= state->release_start_volume * param->release_rate;
             if (state->volume <= 0.0f)
             {
                 state->volume = 0.0f;

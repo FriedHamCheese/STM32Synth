@@ -39,17 +39,17 @@ static void test_adsr_full_envelope(){
 
   adsr_note_on(&state);
   assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.5f));   //attack halfway
-  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 1.0f));   //attack done
-  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.75f));  //decay falls 1.0 per 20ms
-  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.5f));   //reached sustain after 10ms
+  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 1.0f));   //attack done after 10ms
+  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.75f)); //decay halfway to sustain
+  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.5f));  //reached sustain after 20ms
   run_samples(&state, &test_param, 2);
   assert(state.stage == ADSR_SUSTAIN);
   assert(float_within_tolerance(run_ms(&state, &test_param, 1000), 0.5f));
 
   adsr_note_off(&state);
-  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.25f)); //release falls 1.0 per 40ms
+  assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.25f)); //release halfway
   assert(adsr_is_active(&state));
-  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.0f));
+  assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.0f));  //released after 40ms
   run_samples(&state, &test_param, 2);
   assert(!adsr_is_active(&state));
 }
@@ -90,10 +90,11 @@ static void test_adsr_release_before_sustain(){
 
   adsr_note_on(&state);
   assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.5f));
-  //Released mid-attack, fades out from 0.5 instead of cutting off
+  //Released mid-attack, fades out from 0.5 over the full 40ms release instead of cutting off
   adsr_note_off(&state);
-  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.25f));
-  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.0f));
+  assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.25f));
+  assert(adsr_is_active(&state));
+  assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.0f));
   run_samples(&state, &test_param, 2);
   assert(!adsr_is_active(&state));
 }
@@ -106,13 +107,45 @@ static void test_adsr_retrigger_during_release(){
   adsr_note_on(&state);
   assert(float_within_tolerance(run_ms(&state, &test_param, 50), 0.5f));
   adsr_note_off(&state);
-  assert(float_within_tolerance(run_ms(&state, &test_param, 10), 0.25f));
+  assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.25f));
   //Attack ramps from 0.25 instead of jumping to 0
   adsr_note_on(&state);
   assert(float_within_tolerance(run_samples(&state, &test_param, 1), 0.25f));
   assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.75f));
-  //Reaches 1.0 after 2.5ms more, then 2.5ms of decay
-  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.875f));
+  //Reaches 1.0 after 2.5ms more, then 2.5ms of a 20ms decay to 0.5
+  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.9375f));
+}
+
+static void test_adsr_stage_takes_its_time(AdsrParam *param, float sustain){
+  AdsrState state;
+  adsr_init(&state);
+  adsr_note_on(&state);
+  run_ms(&state, param, 10);
+
+  //Decay takes 20ms to reach sustain, whatever the sustain level
+  assert(float_within_tolerance(run_ms(&state, param, 10), (1.0f + sustain) / 2.0f));
+  assert(state.stage == ADSR_DECAY);
+  assert(float_within_tolerance(run_ms(&state, param, 10), sustain));
+  run_samples(&state, param, 2);
+  assert(state.stage == ADSR_SUSTAIN);
+
+  //Release takes 40ms from the sustain level, whatever it is (sustain 0 has nothing to release)
+  adsr_note_off(&state);
+  assert(float_within_tolerance(run_ms(&state, param, 20), sustain / 2.0f));
+  assert(adsr_is_active(&state) == (sustain > 0.0f));
+  run_ms(&state, param, 20);
+  run_samples(&state, param, 2);
+  assert(!adsr_is_active(&state));
+}
+
+static void test_adsr_times_are_stage_lengths(){
+  printf("\ttest_adsr_times_are_stage_lengths()...\n");
+  const float sustains[] = {0.0f, 0.2f, 0.5f, 0.8f};
+  for (int i = 0; i < 4; i++){
+    AdsrParam param;
+    adsr_set_params(&param, 10, 20, sustains[i], 40, AUDIO_SAMPLE_PERIOD);
+    test_adsr_stage_takes_its_time(&param, sustains[i]);
+  }
 }
 
 static void test_adsr_knob_change_no_jump(){
@@ -128,8 +161,18 @@ static void test_adsr_knob_change_no_jump(){
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.5f));
   assert(float_within_tolerance(run_ms(&state, &param, 10), 0.6f));
 
-  //Sustain 0.5 -> 0.7 while held, glides up at decay rate
+  //Sustain 0.5 -> 1.0 mid-decay, above the current volume: glides up instead of getting stuck
   param = test_param;
+  adsr_init(&state);
+  adsr_note_on(&state);
+  assert(float_within_tolerance(run_ms(&state, &param, 10), 1.0f));
+  assert(float_within_tolerance(run_ms(&state, &param, 10), 0.75f));
+  adsr_set_params(&param, 10, 20, 1.0f, 40, AUDIO_SAMPLE_PERIOD);
+  assert(float_within_tolerance(run_ms(&state, &param, 6), 1.0f));
+  assert(state.stage == ADSR_SUSTAIN);
+
+  //Sustain 1.0 -> 0.5 -> 0.7 while held, glides at a full 0<->1 per decay_ms
+  adsr_set_params(&param, 10, 20, 0.5f, 40, AUDIO_SAMPLE_PERIOD);
   assert(float_within_tolerance(run_ms(&state, &param, 1000), 0.5f));
   adsr_set_params(&param, 10, 20, 0.7f, 40, AUDIO_SAMPLE_PERIOD);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 0.5f));
@@ -138,17 +181,17 @@ static void test_adsr_knob_change_no_jump(){
 
   //Release 40ms -> 400ms mid-release, keeps falling from where it was, slower
   adsr_note_off(&state);
-  assert(float_within_tolerance(run_ms(&state, &param, 10), 0.45f));
+  assert(float_within_tolerance(run_ms(&state, &param, 10), 0.525f));
   adsr_set_params(&param, 10, 20, 0.7f, 400, AUDIO_SAMPLE_PERIOD);
-  assert(float_within_tolerance(run_samples(&state, &param, 1), 0.45f));
-  assert(float_within_tolerance(run_ms(&state, &param, 40), 0.35f));
+  assert(float_within_tolerance(run_samples(&state, &param, 1), 0.525f));
+  assert(float_within_tolerance(run_ms(&state, &param, 40), 0.455f));
 
   //Release 400ms -> 4ms, no instant cut, just falls faster
   adsr_set_params(&param, 10, 20, 0.7f, 4, AUDIO_SAMPLE_PERIOD);
-  assert(float_within_tolerance(run_samples(&state, &param, 1), 0.35f - 1.0f / (4 * SAMPLES_PER_MS)));
+  assert(float_within_tolerance(run_samples(&state, &param, 1), 0.455f - 0.7f / (4 * SAMPLES_PER_MS)));
   assert(adsr_is_active(&state));
-  assert(float_within_tolerance(run_samples(&state, &param, SAMPLES_PER_MS - 1), 0.10f));
-  assert(float_within_tolerance(run_ms(&state, &param, 1), 0.0f));
+  assert(float_within_tolerance(run_samples(&state, &param, SAMPLES_PER_MS - 1), 0.28f));
+  assert(float_within_tolerance(run_ms(&state, &param, 2), 0.0f));
   assert(!adsr_is_active(&state));
 }
 
@@ -233,6 +276,7 @@ void test_adsr(){
   test_adsr_full_envelope();
   test_adsr_changes_every_sample();
   test_adsr_1ms_attack_ramps();
+  test_adsr_times_are_stage_lengths();
   test_adsr_release_before_sustain();
   test_adsr_retrigger_during_release();
   test_adsr_knob_change_no_jump();

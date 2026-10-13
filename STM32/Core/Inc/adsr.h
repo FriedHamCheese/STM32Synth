@@ -19,12 +19,15 @@
   so ramps are smooth at sample resolution and no clock is needed.
   Times are converted to per-sample steps once in adsr_set_params(), so the ISR only adds.
 
-  Stage times are for a full 0.0<->1.0 swing, a partial swing takes proportionally less,
-  e.g. a 200ms decay with sustain 0.5 reaches sustain after 100ms.
+  Each time is how long that stage takes:
+  - Attack goes 0.0 -> 1.0 in attack_ms.
+  - Decay goes 1.0 -> sustain_level in decay_ms, whatever the sustain level.
+  - Release goes from wherever the volume is when the key is released down to 0.0 in release_ms,
+    so releasing early (mid attack/decay) fades out over the full release time instead of cutting off.
+  - Pressing a key again while it is releasing ramps attack up from the release volume, avoiding a click,
+    so that attack is shorter than attack_ms.
   - Turning a knob mid-note only changes the ramp speed from then on, volume never jumps.
-  - Releasing a key before sustain fades out from wherever attack/decay got to, instead of cutting off.
-  - Pressing a key again while it is releasing ramps attack up from the release volume, avoiding a click.
-  - While sustaining, volume glides to a changed sustain_level at the decay rate.
+  - While sustaining, volume glides to a changed sustain_level, a full 0<->1 glide takes decay_ms.
 */
 
 typedef enum
@@ -37,16 +40,14 @@ typedef enum
 } AdsrStage;
 
 ///Shared by all voices. Only change it with adsr_set_params(), safe to call at any time, even mid-note.
+///Each rate is the fraction of its stage completed per sample, 1/(stage length in samples).
 typedef struct
 {
-    ///Volume rise per sample during attack
-    float attack_step;
-    ///Volume fall per sample during decay, also used to glide to a changed sustain_level
-    float decay_step;
+    float attack_rate;
+    float decay_rate;
     ///0.0-1.0, volume held after decay while the key is down
     float sustain_level;
-    ///Volume fall per sample during release
-    float release_step;
+    float release_rate;
 } AdsrParam;
 
 ///One per voice.
@@ -55,10 +56,12 @@ typedef struct
     AdsrStage stage;
     ///Last value returned by adsr_get_volume()
     float volume;
+    ///Volume when the key was released, release scales its step by this so it always takes release_ms
+    float release_start_volume;
 } AdsrState;
 
 /**
-  Sets the envelope from times in ms. Each time is for a full 0.0<->1.0 swing, 0ms means instant.
+  Sets the envelope from stage times in ms, 0ms means instant.
   Pass AUDIO_SAMPLE_PERIOD as sample_period (seconds per sample), like get_oscillation_completion().
 */
 void adsr_set_params(
