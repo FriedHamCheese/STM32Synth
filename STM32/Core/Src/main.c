@@ -59,8 +59,8 @@ WaveformConfig waveform_config =
 {
     .rise_pct   = 0.50f,
     .fall_pct   = 0.50f,
-    .rise_shape = WAVE_TRIANGLE,
-    .fall_shape = WAVE_TRIANGLE,
+    .rise_shape = WAVE_SINE,
+    .fall_shape = WAVE_SINE,
     .max_output = 350.0f
 };
 
@@ -71,9 +71,9 @@ VolumeOscillationParam volume_oscillator_param = {
 };
 
 Autoplay autoplay = {
-  .steps = virtinst,
+  .steps = t2theme,
   .step_started_ms = 0,
-  .length = 16, 
+  .length = 28,
   .index = 0,
   .playing = false
 };
@@ -133,9 +133,9 @@ int main(void)
   
   #ifdef IS_MASTER
   sine_lookup_init();
-  adsr_set_params(&adsr_param, 5, 1500, 0.00f, 600, AUDIO_SAMPLE_RATE_HZ);
+  adsr_set_params(&adsr_param, 75, 1500, 0.75f, 100, AUDIO_SAMPLE_RATE_HZ);
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
-  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);

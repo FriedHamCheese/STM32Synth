@@ -38,6 +38,7 @@ enum AutoplayKey{
 };
 
 extern const AutoplayStep virtinst[];
+extern const AutoplayStep t2theme[];
 
 void autoplay_start(Autoplay *autoplay, VoiceManager *voice_manager, uint32_t now_ms);
 void autoplay_stop(Autoplay *autoplay, VoiceManager *voice_manager);

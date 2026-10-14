@@ -86,3 +86,38 @@ const AutoplayStep virtinst[] = {
   { { Ds2, Ds3, Key_off, Key_off, Key_off }, 250 },
   { { Ds3, As3, Cs4, Ds4, Fs4 }, 5000 }
 };
+
+const AutoplayStep t2theme[] = {
+  { { D4, A3, D3, Key_off, Key_off }, 300 },
+  { { E4, B3, D3, Key_off, Key_off }, 300 },
+  { { F4, C4, D3, Key_off, Key_off }, 2000 },
+  { { E4, B3, E3, Key_off, Key_off }, 500 },
+  { { C4, G3, E3, Key_off, Key_off }, 500 },
+  { { F3, C3, E3, Key_off, Key_off }, 2000 },
+  
+  { { D4, A3, D3, Key_off, Key_off }, 300 },
+  { { E4, B3, D3, Key_off, Key_off }, 300 },
+  { { F4, C4, D3, Key_off, Key_off }, 2000 },
+  { { E4, B3, E3, Key_off, Key_off }, 500 },
+  { { C4, G3, E3, Key_off, Key_off }, 500 },
+  { { A4, E4, E3, Key_off, Key_off }, 1500 },
+  { { G4, D4, G3, Key_off, Key_off }, 2000 },
+  
+  { { D4, A3, D3, Key_off, Key_off }, 300 },
+  { { E4, B3, D3, Key_off, Key_off }, 300 },
+  { { F4, C4, D3, Key_off, Key_off }, 2000 },
+  { { E4, B3, E3, Key_off, Key_off }, 500 },
+  { { C4, G3, E3, Key_off, Key_off }, 500 },
+  { { G3, D4, E3, Key_off, Key_off }, 2000 },
+  { { F3, C3, F2, Key_off, Key_off }, 2000 },
+  { { D3, A2, Key_off, Key_off, Key_off }, 1000 },
+  { { F3, C3, F2, Key_off, Key_off }, 2000 },
+  { { E3, B2, E2, Key_off, Key_off }, 2000 },
+  { { D3, A2, D2, Key_off, Key_off }, 5000 },
+
+  //god singing or something, adsr doesn't work with key slam
+  { { D4, A3, F3, C3, D3 }, 3000 }, 
+  { { D4, A3, C4, G3, D3 }, 3000 },   
+  { { D4, A3, As3, F3, D3 }, 3000 },      
+  { { D4, A3, C4, G3, D3 }, 3000 }
+};
