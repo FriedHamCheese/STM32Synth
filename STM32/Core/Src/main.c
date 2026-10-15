@@ -36,6 +36,7 @@
 #include "autoplay.h"
 #include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -93,6 +94,82 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#ifdef IS_MASTER
+static void update_test_c_major_chord(uint32_t now_ms)
+{
+  static uint32_t last_change_ms = 0;
+  static uint8_t stage = 0;
+  static const uint8_t key_ids[] = { C3, C4, C5 };
+
+  if (now_ms - last_change_ms < 2000)
+    return;
+
+  last_change_ms = now_ms;
+
+  if (stage < 3) {
+    const uint8_t key_id = key_ids[stage];
+    const uint8_t slave = key_id / 12;
+    const uint8_t key = key_id % 12;
+    g_keys[slave][key] = g_baseline[slave][key] + PRESS_THRESHOLD + 1;
+    stage++;
+  } else {
+    for (uint8_t i = 0; i < 3; ++i) {
+      const uint8_t slave = key_ids[i] / 12;
+      const uint8_t key = key_ids[i] % 12;
+      g_keys[slave][key] = g_baseline[slave][key];
+    }
+    stage = 0;
+  }
+}
+#endif
+
+void periodic_loop(void)
+{
+  static uint32_t last_poll = 0;
+  uint32_t now = HAL_GetTick();
+
+  controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
+  controls_update_adsr(&adsr_param);
+  if (now - last_poll >= 10)
+  {
+    last_poll = now;
+    #ifdef IS_MASTER
+    poll_slaves();
+    #ifdef V1_TEST_V2
+    update_test_c_major_chord(now);
+    #endif
+    if(!autoplay.playing)
+    	process_keys(&voice_manager, voice_manager_note_on, voice_manager_note_off, now);
+    #else
+    update_keyframe();
+    #endif
+  }
+  
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4));
+
+  #ifdef IS_MASTER/*
+  static GPIO_PinState autoplay_button_last = GPIO_PIN_SET;
+  static uint8_t autoplay_song_index = 0;
+  const GPIO_PinState autoplay_button_status = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
+  const uint8_t autoplay_button_pressed =
+      autoplay_button_last == GPIO_PIN_SET && autoplay_button_status == GPIO_PIN_RESET;
+  if (autoplay_button_pressed) {
+    autoplay_song_index++;
+    const uint8_t stop_autoplay = autoplay_song_index > autoplay_song_count;
+    if(stop_autoplay){
+      autoplay_stop(&autoplay, &voice_manager);
+      voice_manager_all_off(&voice_manager);
+    }else{
+      autoplay.steps = autoplay_songs[autoplay_song_index-1].steps;
+      autoplay.length = autoplay_songs[autoplay_song_index-1].length;
+      autoplay_start(&autoplay, &voice_manager, now);
+    }
+  }
+  autoplay_button_last = autoplay_button_status;
+  autoplay_update(&autoplay, &voice_manager, now);*/
+  #endif
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -128,17 +205,19 @@ int main(void)
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   mux_adc_init();
   
   #ifdef IS_MASTER
   sine_lookup_init();
-  adsr_set_params(&adsr_param, 75, 1500, 0.75f, 100, AUDIO_SAMPLE_RATE_HZ);
+  adsr_set_params(&adsr_param, 0, 0, 1.0f, 0, AUDIO_SAMPLE_RATE_HZ);
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
   audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
   boot_calibrate();
@@ -149,68 +228,15 @@ int main(void)
   #ifdef V1_TEST_V2
   memset((void*)g_keys, 0, sizeof(g_keys));  
   memset((void*)g_baseline, 0, sizeof(g_baseline));
-  uint32_t last_interval_ms = 0;
-  uint8_t test_stage = 0;
-  autoplay_start(&autoplay, &voice_manager, HAL_GetTick());
-  uint8_t test_key_valid = 0;
-  uint8_t test_key_slave = 0;
-  uint8_t test_key_index = 0;
   #endif
   
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t last_poll = 0;
   while (1)
   {
-    #ifndef V1_TEST_V2
-    controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
-    controls_update_adsr(&adsr_param);
-    #endif
 
-    uint32_t now = HAL_GetTick();
-    if (now - last_poll >= 10)
-    {
-      last_poll = now;
-      #ifdef IS_MASTER
-      poll_slaves();
-      process_keys(&voice_manager, voice_manager_note_on, voice_manager_note_off, now);
-      #else
-      update_keyframe();
-      #endif
-    }
-    
-    #if defined(V1_TEST_V2) && defined(IS_MASTER)
-    const int16_t trigger_keypress = PRESS_THRESHOLD + 1;
-/*
-    if(now - last_interval_ms >= 2000){
-      //Make the test monophonic: release the previous key before pressing the next one.
-      if (test_key_valid)
-        g_keys[test_key_slave][test_key_index] = 0;
-
-      //The assignment above must be the new key, so restore it after clearing the old one.
-      switch (test_stage) {
-        case 0: test_key_slave = 3; test_key_index = 0; break;
-        case 1: test_key_slave = 3; test_key_index = 4; break;
-        case 2: test_key_slave = 3; test_key_index = 7; break;
-        case 3: test_key_slave = 5; test_key_index = 0; break;
-        case 4: test_key_slave = 5; test_key_index = 4; break;
-        case 5: test_key_slave = 5; test_key_index = 7; break;
-        case 6: test_key_slave = 6; test_key_index = 0; break;
-        case 7: test_key_slave = 6; test_key_index = 4; break;
-        case 8: test_key_slave = 6; test_key_index = 7; break;
-      }
-      g_keys[test_key_slave][test_key_index] = trigger_keypress;
-      test_key_valid = 1;
-      
-      test_stage++;
-      test_stage %= 8;
-      last_interval_ms = now;
-    }*/
-    autoplay_update(&autoplay, &voice_manager, now);
-    #endif
-    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

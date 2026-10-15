@@ -121,3 +121,11 @@ const AutoplayStep t2theme[] = {
   { { D4, A3, As3, F3, D3 }, 3000 },      
   { { D4, A3, C4, G3, D3 }, 3000 }
 };
+
+const AutoplaySong autoplay_songs[] = {
+  { virtinst, (uint8_t)(sizeof(virtinst) / sizeof(virtinst[0])), "Virtual Insanity Intro" },
+  { t2theme,  (uint8_t)(sizeof(t2theme)  / sizeof(t2theme[0])),  "Terminator 2 Theme" }
+};
+
+const uint8_t autoplay_song_count =
+    (uint8_t)(sizeof(autoplay_songs) / sizeof(autoplay_songs[0]));

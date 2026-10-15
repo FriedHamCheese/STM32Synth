@@ -159,6 +159,13 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     return (wavegen_output_t)mixed_sample;
 }
 
+void voice_manager_all_off(VoiceManager *manager){
+  if(!manager) return;
+  
+  for(uint8_t i = 0; i < MAX_VOICES; i++)
+    manager->voices[i].active = 0;
+}
+
 static float frequencies_at_octave_0[12] = {
   16.35160f,
   17.32391f,

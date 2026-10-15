@@ -97,7 +97,7 @@ float adsr_get_volume(AdsrState *state, const AdsrParam *param)
 
         case ADSR_SUSTAIN:
             //Glides to a changed sustain pot instead of jumping
-            //state->volume = move_toward(state->volume, param->sustain_level, param->decay_rate);
+            state->volume =param->sustain_level;
             break;
 
         case ADSR_RELEASE:

@@ -3,6 +3,8 @@
 #include "tim.h"
 #include "volume_oscillation.h"
 
+extern void periodic_loop(void);
+
 VoiceManager    *s_vm  = 0;
 WaveformConfig  *s_cfg = 0;
 VolumeOscillationParam *s_vosc = 0;
@@ -28,6 +30,11 @@ inline void set_audio_output_value(wavegen_output_t left, wavegen_output_t right
 /* 48kHz ISR — called from TIM4 overflow */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+    if (htim->Instance == TIM3) {
+        periodic_loop();
+        return;
+    }
+
     if (htim->Instance != TIM4 || !s_vm || !s_cfg || !s_vosc)
         return;
 

@@ -25,6 +25,13 @@ typedef struct
     bool playing;
 } Autoplay;
 
+typedef struct
+{
+    const AutoplayStep *steps;
+    uint8_t length;
+    const char *label;
+} AutoplaySong;
+
 enum AutoplayKey{
   C0 = 0, Cs0, D0, Ds0, E0, F0, Fs0, G0, Gs0, A0, As0, B0,
   C1, Cs1, D1, Ds1, E1, F1, Fs1, G1, Gs1, A1, As1, B1,
@@ -39,6 +46,8 @@ enum AutoplayKey{
 
 extern const AutoplayStep virtinst[];
 extern const AutoplayStep t2theme[];
+extern const AutoplaySong autoplay_songs[];
+extern const uint8_t autoplay_song_count;
 
 void autoplay_start(Autoplay *autoplay, VoiceManager *voice_manager, uint32_t now_ms);
 void autoplay_stop(Autoplay *autoplay, VoiceManager *voice_manager);
