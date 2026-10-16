@@ -19,7 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dma.h"
 #include "i2c.h"
+#include "spi.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -34,6 +36,9 @@
 #include "sine_lookup.h"
 #include "adsr.h"
 #include "autoplay.h"
+#include "ui.h"
+#include "ui_data.h"
+
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -84,6 +89,9 @@ AdsrParam adsr_param;
 VoiceManager voice_manager;
 //Master volume can be from 0.0 to 10.0x, overdrive woo
 float master_volume = 1.0f;
+
+ui_data_t ui_data;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -99,21 +107,26 @@ static void update_test_c_major_chord(uint32_t now_ms)
 {
   static uint32_t last_change_ms = 0;
   static uint8_t stage = 0;
-  static const uint8_t key_ids[] = { C3, C4, C5 };
+  static const uint8_t key_ids[] = {
+    C3, E3, G3,
+    C4, E4, G4,
+    C5, E5, G5
+  };
+  const uint8_t key_count = sizeof(key_ids) / sizeof(key_ids[0]);
 
   if (now_ms - last_change_ms < 2000)
     return;
 
   last_change_ms = now_ms;
 
-  if (stage < 3) {
+  if (stage < key_count) {
     const uint8_t key_id = key_ids[stage];
     const uint8_t slave = key_id / 12;
     const uint8_t key = key_id % 12;
     g_keys[slave][key] = g_baseline[slave][key] + PRESS_THRESHOLD + 1;
     stage++;
   } else {
-    for (uint8_t i = 0; i < 3; ++i) {
+    for (uint8_t i = 0; i < key_count; ++i) {
       const uint8_t slave = key_ids[i] / 12;
       const uint8_t key = key_ids[i] % 12;
       g_keys[slave][key] = g_baseline[slave][key];
@@ -123,6 +136,63 @@ static void update_test_c_major_chord(uint32_t now_ms)
 }
 #endif
 
+static void handle_autoplay_button_pressed(uint32_t now_ms){
+  static GPIO_PinState autoplay_button_last = GPIO_PIN_SET;
+  static uint8_t autoplay_song_index = 0;
+  const GPIO_PinState autoplay_button_status = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
+  const uint8_t autoplay_button_pressed = (
+      autoplay_button_last == GPIO_PIN_SET 
+      && autoplay_button_status == GPIO_PIN_RESET
+  );
+  
+  if (autoplay_button_pressed) {
+    voice_manager_all_off(&voice_manager);
+    autoplay_song_index++;
+    const uint8_t stop_autoplay = autoplay_song_index > autoplay_song_count;
+    if(stop_autoplay){
+      autoplay_stop(&autoplay, &voice_manager);
+      autoplay_song_index = 0;
+    }else{
+      autoplay.steps = autoplay_songs[autoplay_song_index-1].steps;
+      autoplay.length = autoplay_songs[autoplay_song_index-1].length;
+      autoplay_start(&autoplay, &voice_manager, now_ms);
+    }
+  }
+  autoplay_button_last = autoplay_button_status;
+  autoplay_update(&autoplay, &voice_manager, now_ms); 
+}
+
+static float ui_adsr_rate_to_seconds(float rate)
+{
+  if (rate >= 1.0f || rate <= 0.0f)
+    return 0.0f;
+  return 1.0f / (rate * AUDIO_SAMPLE_RATE_HZ);
+}
+
+static float ui_wave_sample(float phase)
+{
+  float sample = (float)waveform_get_point(phase, &waveform_config);
+  if (waveform_config.max_output <= 0.0f)
+    return 0.0f;
+  return (sample / waveform_config.max_output) * 2.0f - 1.0f;
+}
+
+static void update_ui_data(void)
+{
+  ui_data.wave_sample = ui_wave_sample;
+  ui_data.rise_pct = waveform_config.rise_pct * 100.0f;
+  ui_data.fall_pct = waveform_config.fall_pct * 100.0f;
+  ui_data.adsr_valid = true;
+  ui_data.attack_s = ui_adsr_rate_to_seconds(adsr_param.attack_rate);
+  ui_data.decay_s = ui_adsr_rate_to_seconds(adsr_param.decay_rate);
+  ui_data.sustain = adsr_param.sustain_level;
+  ui_data.release_s = ui_adsr_rate_to_seconds(adsr_param.release_rate);
+  ui_data.lfo_depth = volume_oscillator_param.strength;
+  ui_data.lfo_hz = volume_oscillator_param.frequency;
+  ui_data.volume_valid = true;
+  ui_data.volume = master_volume;
+}
+
 void periodic_loop(void)
 {
   static uint32_t last_poll = 0;
@@ -130,6 +200,7 @@ void periodic_loop(void)
 
   controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
   controls_update_adsr(&adsr_param);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12));
   if (now - last_poll >= 10)
   {
     last_poll = now;
@@ -145,28 +216,8 @@ void periodic_loop(void)
     #endif
   }
   
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4));
-
-  #ifdef IS_MASTER/*
-  static GPIO_PinState autoplay_button_last = GPIO_PIN_SET;
-  static uint8_t autoplay_song_index = 0;
-  const GPIO_PinState autoplay_button_status = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
-  const uint8_t autoplay_button_pressed =
-      autoplay_button_last == GPIO_PIN_SET && autoplay_button_status == GPIO_PIN_RESET;
-  if (autoplay_button_pressed) {
-    autoplay_song_index++;
-    const uint8_t stop_autoplay = autoplay_song_index > autoplay_song_count;
-    if(stop_autoplay){
-      autoplay_stop(&autoplay, &voice_manager);
-      voice_manager_all_off(&voice_manager);
-    }else{
-      autoplay.steps = autoplay_songs[autoplay_song_index-1].steps;
-      autoplay.length = autoplay_songs[autoplay_song_index-1].length;
-      autoplay_start(&autoplay, &voice_manager, now);
-    }
-  }
-  autoplay_button_last = autoplay_button_status;
-  autoplay_update(&autoplay, &voice_manager, now);*/
+  #ifdef IS_MASTER
+  handle_autoplay_button_pressed(now);
   #endif
 }
 
@@ -201,11 +252,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
   mux_adc_init();
   
@@ -221,6 +274,8 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
   boot_calibrate();
+  update_ui_data();
+  ui_init(&ui_data);
   #else
   init_slave();
   #endif
@@ -236,6 +291,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    #ifdef IS_MASTER
+    update_ui_data();
+    ui_task(&ui_data);
+    #endif
 
     /* USER CODE END WHILE */
 

@@ -79,9 +79,6 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
     if (s_last_mode_pin == GPIO_PIN_SET && mode_pin == GPIO_PIN_RESET)
         s_adsr_mode = !s_adsr_mode;
     s_last_mode_pin = mode_pin;
-/*
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13,
-                      s_adsr_mode ? GPIO_PIN_RESET : GPIO_PIN_SET);*/
 
     if (s_adsr_mode)
         return;

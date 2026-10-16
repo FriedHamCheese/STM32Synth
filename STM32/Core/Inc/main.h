@@ -67,6 +67,12 @@ void Error_Handler(void);
 #define MUX_S3_GPIO_Port GPIOA
 #define MUX_SIG_Pin GPIO_PIN_4
 #define MUX_SIG_GPIO_Port GPIOA
+#define LCD_CS_Pin GPIO_PIN_8
+#define LCD_CS_GPIO_Port GPIOA
+#define LCD_RST_Pin GPIO_PIN_9
+#define LCD_RST_GPIO_Port GPIOA
+#define LCD_DC_Pin GPIO_PIN_10
+#define LCD_DC_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 
