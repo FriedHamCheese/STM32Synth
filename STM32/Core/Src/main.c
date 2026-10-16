@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
-#include "dma.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -40,7 +39,6 @@
 #include "ui_data.h"
 
 #include <math.h>
-#include <stdbool.h>
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -51,7 +49,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define V1_TEST_V2
+#define TEST_WITHOUT_SLAVE
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -77,12 +75,16 @@ VolumeOscillationParam volume_oscillator_param = {
 };
 
 Autoplay autoplay = {
-  .steps = t2theme,
+  //C const isn't compile-time const, use C++, so here's a NULL :D
+  .steps = NULL,
   .step_started_ms = 0,
-  .length = 28,
+  .length = 0,
   .index = 0,
   .playing = false
 };
+const int8_t autoplay_pause_index = -1;
+static int8_t autoplay_song_index = autoplay_pause_index;
+
 //Set with adsr_set_params() at startup and by controls_update_adsr()
 AdsrParam adsr_param;
 
@@ -103,110 +105,26 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #ifdef IS_MASTER
-static void update_test_c_major_chord(uint32_t now_ms)
-{
-  static uint32_t last_change_ms = 0;
-  static uint8_t stage = 0;
-  static const uint8_t key_ids[] = {
-    C3, E3, G3,
-    C4, E4, G4,
-    C5, E5, G5
-  };
-  const uint8_t key_count = sizeof(key_ids) / sizeof(key_ids[0]);
-
-  if (now_ms - last_change_ms < 2000)
-    return;
-
-  last_change_ms = now_ms;
-
-  if (stage < key_count) {
-    const uint8_t key_id = key_ids[stage];
-    const uint8_t slave = key_id / 12;
-    const uint8_t key = key_id % 12;
-    g_keys[slave][key] = g_baseline[slave][key] + PRESS_THRESHOLD + 1;
-    stage++;
-  } else {
-    for (uint8_t i = 0; i < key_count; ++i) {
-      const uint8_t slave = key_ids[i] / 12;
-      const uint8_t key = key_ids[i] % 12;
-      g_keys[slave][key] = g_baseline[slave][key];
-    }
-    stage = 0;
-  }
-}
+static void update_test_c_major_chord(uint32_t now_ms);
+static void handle_autoplay_button_pressed(uint32_t now_ms);
+static float ui_adsr_rate_to_seconds(float rate);
+static float waveform_get_point_as_amplitude(float phase);
+static void update_ui_data(void);
 #endif
 
-static void handle_autoplay_button_pressed(uint32_t now_ms){
-  static GPIO_PinState autoplay_button_last = GPIO_PIN_SET;
-  static uint8_t autoplay_song_index = 0;
-  const GPIO_PinState autoplay_button_status = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
-  const uint8_t autoplay_button_pressed = (
-      autoplay_button_last == GPIO_PIN_SET 
-      && autoplay_button_status == GPIO_PIN_RESET
-  );
-  
-  if (autoplay_button_pressed) {
-    voice_manager_all_off(&voice_manager);
-    autoplay_song_index++;
-    const uint8_t stop_autoplay = autoplay_song_index > autoplay_song_count;
-    if(stop_autoplay){
-      autoplay_stop(&autoplay, &voice_manager);
-      autoplay_song_index = 0;
-    }else{
-      autoplay.steps = autoplay_songs[autoplay_song_index-1].steps;
-      autoplay.length = autoplay_songs[autoplay_song_index-1].length;
-      autoplay_start(&autoplay, &voice_manager, now_ms);
-    }
-  }
-  autoplay_button_last = autoplay_button_status;
-  autoplay_update(&autoplay, &voice_manager, now_ms); 
-}
-
-static float ui_adsr_rate_to_seconds(float rate)
-{
-  if (rate >= 1.0f || rate <= 0.0f)
-    return 0.0f;
-  return 1.0f / (rate * AUDIO_SAMPLE_RATE_HZ);
-}
-
-static float ui_wave_sample(float phase)
-{
-  float sample = (float)waveform_get_point(phase, &waveform_config);
-  if (waveform_config.max_output <= 0.0f)
-    return 0.0f;
-  return (sample / waveform_config.max_output) * 2.0f - 1.0f;
-}
-
-static void update_ui_data(void)
-{
-  ui_data.wave_sample = ui_wave_sample;
-  ui_data.rise_pct = waveform_config.rise_pct * 100.0f;
-  ui_data.fall_pct = waveform_config.fall_pct * 100.0f;
-  ui_data.adsr_valid = true;
-  ui_data.attack_s = ui_adsr_rate_to_seconds(adsr_param.attack_rate);
-  ui_data.decay_s = ui_adsr_rate_to_seconds(adsr_param.decay_rate);
-  ui_data.sustain = adsr_param.sustain_level;
-  ui_data.release_s = ui_adsr_rate_to_seconds(adsr_param.release_rate);
-  ui_data.lfo_depth = volume_oscillator_param.strength;
-  ui_data.lfo_hz = volume_oscillator_param.frequency;
-  ui_data.volume_valid = true;
-  ui_data.volume = master_volume;
-}
-
-void periodic_loop(void)
+void main_runtime_iter(void)
 {
   static uint32_t last_poll = 0;
   uint32_t now = HAL_GetTick();
 
   controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
   controls_update_adsr(&adsr_param);
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12));
   if (now - last_poll >= 10)
   {
     last_poll = now;
     #ifdef IS_MASTER
     poll_slaves();
-    #ifdef V1_TEST_V2
+    #ifdef TEST_WITHOUT_SLAVE
     update_test_c_major_chord(now);
     #endif
     if(!autoplay.playing)
@@ -252,7 +170,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
@@ -270,17 +187,17 @@ int main(void)
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
-  HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
   boot_calibrate();
-  update_ui_data();
   ui_init(&ui_data);
   #else
   init_slave();
   #endif
+  
+  HAL_TIM_Base_Start_IT(&htim3);
 
-  #ifdef V1_TEST_V2
+  #ifdef TEST_WITHOUT_SLAVE
   memset((void*)g_keys, 0, sizeof(g_keys));  
   memset((void*)g_baseline, 0, sizeof(g_baseline));
   #endif
@@ -350,7 +267,127 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void update_test_c_major_chord(uint32_t now_ms)
+{
+  static uint32_t last_change_ms = 0;
+  static uint8_t stage = 0;
+  static const uint8_t key_ids[] = {
+    C3, E3, G3,
+    C4, E4, G4,
+    C5, E5, G5
+  };
+  const uint8_t key_count = sizeof(key_ids) / sizeof(key_ids[0]);
 
+  if (now_ms - last_change_ms < 2000)
+    return;
+
+  last_change_ms = now_ms;
+
+  if (stage < key_count) {
+    const uint8_t key_id = key_ids[stage];
+    const uint8_t slave = key_id / 12;
+    const uint8_t key = key_id % 12;
+    g_keys[slave][key] = g_baseline[slave][key] + PRESS_THRESHOLD + 1;
+    stage++;
+  } else {
+    for (uint8_t i = 0; i < key_count; ++i) {
+      const uint8_t slave = key_ids[i] / 12;
+      const uint8_t key = key_ids[i] % 12;
+      g_keys[slave][key] = g_baseline[slave][key];
+    }
+    stage = 0;
+  }
+}
+
+static float ui_adsr_rate_to_seconds(float rate)
+{
+  if (rate >= 1.0f || rate <= 0.0f)
+    return 0.0f;
+  return 1.0f * AUDIO_SAMPLE_PERIOD / rate;
+}
+
+static float waveform_get_point_as_amplitude(float phase)
+{
+  const float sample = (float)waveform_get_point(phase, &waveform_config);
+  const float peak_as_one = 2.0f;
+  const float wave_center_as_zero = -1.0f;
+  if (waveform_config.max_output <= 0.0f)
+    return 0.0f;
+  return ((sample/waveform_config.max_output)*peak_as_one) + wave_center_as_zero;
+}
+
+static void update_ui_data(void)
+{
+  ui_data.wave_sample = waveform_get_point_as_amplitude;
+  ui_data.rise_pct = waveform_config.rise_pct * 100.0f;
+  ui_data.fall_pct = waveform_config.fall_pct * 100.0f;
+  ui_data.adsr_valid = true;
+  ui_data.attack_s = ui_adsr_rate_to_seconds(adsr_param.attack_rate);
+  ui_data.decay_s = ui_adsr_rate_to_seconds(adsr_param.decay_rate);
+  ui_data.sustain = adsr_param.sustain_level;
+  ui_data.release_s = ui_adsr_rate_to_seconds(adsr_param.release_rate);
+  ui_data.lfo_depth = volume_oscillator_param.strength;
+  ui_data.lfo_hz = volume_oscillator_param.frequency;
+  ui_data.volume_valid = true;
+  ui_data.volume = master_volume;
+  
+  /*
+  uiv2 provisions:
+  - currently has
+    if(autoplay_song_index == autoplay_pause_index) 
+      ui_data.autoplay_label = idk empty or manual play
+    else
+      ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index]
+  - highly likely to:
+    ui_data.wave_center_oscillate_hz = 0.0(off) to 20.0hz
+  - might:
+    ui_data.lowpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
+    ui_data.highpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
+    only either will be on, or both off; they will use the same knob
+    
+    ui_data.filter_adsr_strength = 0.0 to 1.0
+    ui_data.filter_fixed_strength = 0.0 to 1.0
+    adsr and fixed strength shares same knob
+  */
+}
+
+static void handle_autoplay_button_pressed(uint32_t now_ms)
+{
+    static GPIO_PinState autoplay_button_last = GPIO_PIN_SET;
+    const GPIO_PinState autoplay_button_status =
+        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
+
+    const uint8_t autoplay_button_pressed =
+        autoplay_button_last == GPIO_PIN_SET &&
+        autoplay_button_status == GPIO_PIN_RESET;
+
+    if (autoplay_button_pressed)
+    {
+        voice_manager_all_off(&voice_manager);
+
+        autoplay_song_index++;
+
+        if (autoplay_song_index >= AUTOPLAY_SONG_COUNT)
+        {
+            autoplay_stop(&autoplay, &voice_manager);
+            autoplay_song_index = -1;
+        }
+        else
+        {
+            autoplay.steps =
+                autoplay_song_list.steps[autoplay_song_index];
+
+            autoplay.length =
+                autoplay_song_list.lengths[autoplay_song_index];
+
+            autoplay_start(&autoplay, &voice_manager, now_ms);
+        }
+    }
+
+    autoplay_button_last = autoplay_button_status;
+
+    autoplay_update(&autoplay, &voice_manager, now_ms);
+}
 /* USER CODE END 4 */
 
 /**
