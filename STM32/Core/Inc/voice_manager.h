@@ -11,10 +11,11 @@
 typedef struct
 {
     ///Set by note_on in main loop, cleared by get_sample in ISR once envelope release finishes
-    uint8_t active;
-    uint16_t key_id;
-    Waveform oscillator;
     AdsrState envelope;
+    Waveform oscillator;
+    float volume;
+    uint16_t key_id;
+    uint8_t active;
 } Voice;
 
 typedef struct

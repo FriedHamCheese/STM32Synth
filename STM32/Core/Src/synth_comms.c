@@ -23,11 +23,11 @@ uint8_t           g_slave_count                   = 0;
 
 static KeyFrame s_frame;
 
-/* Fast press (10ms) → vel 127; slow press (2500ms+) → vel 1 */
+/* Fast press (10ms) → vel 127; slow press (200ms+) → vel 1 */
 int16_t map_velocity(uint32_t delta_ms)
 {
     const uint32_t min_ms = 10;
-    const uint32_t max_ms = 2500;
+    const uint32_t max_ms = 200;
     const int16_t max_velocity = 127;
     const int16_t min_velocity = 1;
     

@@ -110,6 +110,7 @@ static void handle_autoplay_button_pressed(uint32_t now_ms);
 static float ui_adsr_rate_to_seconds(float rate);
 static float waveform_get_point_as_amplitude(float phase);
 static void update_ui_data(void);
+static void test_key_velocity(uint32_t now_ms);
 #endif
 
 void main_runtime_iter(void)
@@ -125,6 +126,7 @@ void main_runtime_iter(void)
     #ifdef IS_MASTER
     poll_slaves();
     #ifdef TEST_WITHOUT_SLAVE
+    //test_key_velocity(now);
     update_test_c_major_chord(now);
     #endif
     if(!autoplay.playing)
@@ -296,6 +298,41 @@ static void update_test_c_major_chord(uint32_t now_ms)
       g_keys[slave][key] = g_baseline[slave][key];
     }
     stage = 0;
+  }
+}
+
+static void test_key_velocity(uint32_t now_ms){
+  static uint32_t last_event_ms = 0;
+  static uint32_t event_period_ms = 1;
+  const uint32_t key_hold_ms = 2000;
+  const uint32_t key_release_ms = 1000;
+  const uint16_t move_trigger = MOVE_THRESHOLD + 1;
+  const uint16_t press_trigger = PRESS_THRESHOLD + 1;
+  
+  const uint8_t key_not_pressed = g_keys[4][0] == g_baseline[4][0];
+  if(key_not_pressed){
+    if(now_ms - last_event_ms >= key_release_ms){
+      g_keys[4][0] = g_baseline[4][0] + move_trigger;
+      last_event_ms = now_ms;
+    }
+    return;
+  }
+  const uint8_t key_moved = g_keys[4][0] == g_baseline[4][0] + move_trigger;
+  if(key_moved){
+    if(now_ms - last_event_ms >= event_period_ms){
+      g_keys[4][0] = g_baseline[4][0] + press_trigger;
+      last_event_ms = now_ms;
+    }
+    return;
+  }
+  const uint8_t key_pressed = g_keys[4][0] == g_baseline[4][0] + press_trigger;
+  if(key_pressed){
+    if(now_ms - last_event_ms >= key_hold_ms){
+      g_keys[4][0] = g_baseline[4][0];
+      event_period_ms = (event_period_ms >= 200) ? event_period_ms : event_period_ms*2;
+      last_event_ms = now_ms;
+    }
+    return;
   }
 }
 
