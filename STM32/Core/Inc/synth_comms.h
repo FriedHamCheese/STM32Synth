@@ -10,7 +10,7 @@
 /* #define SLAVE_ID 0 */
 
 #ifndef SLAVE_ID
-#define SLAVE_ID 0
+#define SLAVE_ID 4
 #endif
 
 #ifndef PC_UNITTEST
@@ -24,12 +24,12 @@
 #define MAX_SLAVES        8
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
 #define I2C_TIMEOUT_MS    2
-#define PRESS_THRESHOLD   300    /* signed ADC delta from baseline — tune per H3503 */
+#define PRESS_THRESHOLD   -500    /* signed ADC delta from baseline — tune per H3503 */
 #define STALE_TIMEOUT_MS  30
 #define MIDI_BASE_NOTE    48     /* C3 — key 0 on leftmost slave */
 
 //idfk man
-#define MOVE_THRESHOLD PRESS_THRESHOLD/2
+#define MOVE_THRESHOLD -200
 
 typedef enum { KEY_IDLE, KEY_PRESSED } KeyState;
 

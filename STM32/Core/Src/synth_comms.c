@@ -26,8 +26,8 @@ static KeyFrame s_frame;
 /* Fast press (10ms) → vel 127; slow press (200ms+) → vel 1 */
 int16_t map_velocity(uint32_t delta_ms)
 {
-    const uint32_t min_ms = 10;
-    const uint32_t max_ms = 200;
+    const uint32_t min_ms = 25;
+    const uint32_t max_ms = 500;
     const int16_t max_velocity = 127;
     const int16_t min_velocity = 1;
     
@@ -65,9 +65,13 @@ void scan_slaves(void)
 void poll_slaves(void)
 {
     for (uint8_t s = 0; s < MAX_SLAVES; s++) {
-        if (HAL_I2C_Master_Receive(&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
-                                   (uint8_t *)&s_frame, sizeof(s_frame),
-                                   I2C_TIMEOUT_MS) == HAL_OK) {
+    	const HAL_StatusTypeDef i2c_status = HAL_I2C_Master_Receive(
+			&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
+			(uint8_t *)&s_frame, sizeof(s_frame),
+			2
+		);
+    	volatile const uint32_t err = HAL_I2C_GetError(&hi2c1);
+        if (i2c_status == HAL_OK) {
             for (uint8_t k = 0; k < 12; k++)
                 g_keys[s][k] = s_frame.adc[k];
             g_last_update[s] = HAL_GetTick();
@@ -84,20 +88,20 @@ void process_keys(VoiceManager *vm,
     for (uint8_t s = 0; s < MAX_SLAVES; s++) {
         for (uint8_t k = 0; k < 12; k++) {
             int16_t depth = g_keys[s][k] - g_baseline[s][k];
-
-            /* Track first movement for time-based velocity */
-            if (!g_press_moving[s][k] && depth > MOVE_THRESHOLD) {
+            
+            /*Track first movement for time-based velocity*/
+            if (!g_press_moving[s][k] && depth < MOVE_THRESHOLD) {
                 g_press_moving[s][k] = 1;
                 g_press_start[s][k]  = now_ms;
             }
 
-            if (g_key_state[s][k] == KEY_IDLE && depth > PRESS_THRESHOLD) {
+            if (g_key_state[s][k] == KEY_IDLE && depth < PRESS_THRESHOLD) {
                 uint32_t delta_ms    = now_ms - g_press_start[s][k];
                 uint8_t  vel         = map_velocity(delta_ms);
                 g_key_velocity[s][k] = (int16_t)vel;
                 g_key_state[s][k]    = KEY_PRESSED;
                 note_on(vm, (uint16_t)(s * 12 + k), vel);
-            } else if (g_key_state[s][k] == KEY_PRESSED && depth <= PRESS_THRESHOLD) {
+            } else if (g_key_state[s][k] == KEY_PRESSED && depth >= PRESS_THRESHOLD) {
                 g_key_state[s][k]    = KEY_IDLE;
                 g_press_moving[s][k] = 0;
                 note_off(vm, (uint16_t)(s * 12 + k));
@@ -144,7 +148,7 @@ void init_slave(void)
     hi2c1.Init.OwnAddress1 = (uint32_t)((SLAVE_BASE_ADDR + SLAVE_ID) << 1);
     if (HAL_I2C_Init(&hi2c1) != HAL_OK)
         Error_Handler();
-    HAL_I2C_EnableListen_IT(&hi2c1);
+    /* Blocking mock-slave test path: the main loop owns the transaction. */
 }
 
 void update_keyframe(void)

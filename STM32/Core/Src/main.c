@@ -49,7 +49,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TEST_WITHOUT_SLAVE
+//#define TEST_WITHOUT_SLAVE
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -112,27 +112,32 @@ static float waveform_get_point_as_amplitude(float phase);
 static void update_ui_data(void);
 static void test_key_velocity(uint32_t now_ms);
 #endif
+#ifndef IS_MASTER
+static void mock_update_keyframe(void);
+#endif
 
 void main_runtime_iter(void)
 {
   static uint32_t last_poll = 0;
   uint32_t now = HAL_GetTick();
 
+  #ifdef IS_MASTER
   controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
   controls_update_adsr(&adsr_param);
-  if (now - last_poll >= 10)
+  #endif
+  if (now - last_poll >= 20)
   {
     last_poll = now;
     #ifdef IS_MASTER
-    poll_slaves();
     #ifdef TEST_WITHOUT_SLAVE
     //test_key_velocity(now);
     update_test_c_major_chord(now);
     #endif
-    if(!autoplay.playing)
+    if(!autoplay.playing){
+      poll_slaves();
     	process_keys(&voice_manager, voice_manager_note_on, voice_manager_note_off, now);
+    }
     #else
-    update_keyframe();
     #endif
   }
   
@@ -189,6 +194,7 @@ int main(void)
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
   boot_calibrate();
@@ -197,8 +203,6 @@ int main(void)
   init_slave();
   #endif
   
-  HAL_TIM_Base_Start_IT(&htim3);
-
   #ifdef TEST_WITHOUT_SLAVE
   memset((void*)g_keys, 0, sizeof(g_keys));  
   memset((void*)g_baseline, 0, sizeof(g_baseline));
@@ -213,6 +217,12 @@ int main(void)
     #ifdef IS_MASTER
     update_ui_data();
     ui_task(&ui_data);
+    #else
+    update_keyframe();
+    volatile const HAL_StatusTypeDef err = HAL_I2C_Slave_Transmit(&hi2c1,
+                           (uint8_t *)&g_keyframe,
+                           sizeof(g_keyframe),
+                           100);
     #endif
 
     /* USER CODE END WHILE */
@@ -269,6 +279,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+#ifdef IS_MASTER
 static void update_test_c_major_chord(uint32_t now_ms)
 {
   static uint32_t last_change_ms = 0;
@@ -425,6 +436,33 @@ static void handle_autoplay_button_pressed(uint32_t now_ms)
 
     autoplay_update(&autoplay, &voice_manager, now_ms);
 }
+#endif
+
+#ifndef IS_MASTER
+static void mock_update_keyframe(void)
+{
+  static uint8_t first_packet = 1;
+  static const uint8_t chord_keys[] = { 0, 4, 7 };
+
+  for (uint8_t key = 0; key < 12; ++key)
+    g_keyframe.adc[key] = 0;
+
+  /* Keep the first packet at baseline for master boot calibration. */
+  if (first_packet)
+  {
+    first_packet = 0;
+    return;
+  }
+
+  /* C3/E3/G3, C4/E4/G4, and C5/E5/G5 map to slave IDs 3, 4, and 5. */
+  if (SLAVE_ID < 3 || SLAVE_ID > 5)
+    return;
+
+  for (uint8_t i = 0; i < sizeof(chord_keys); ++i)
+    g_keyframe.adc[chord_keys[i]] = PRESS_THRESHOLD + 1;
+}
+#endif
+
 /* USER CODE END 4 */
 
 /**
