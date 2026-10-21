@@ -120,11 +120,16 @@ static void mock_update_keyframe(void);
 void main_runtime_iter(void)
 {
   static uint32_t last_poll = 0;
+  static uint32_t last_controls_poll = 0;
   uint32_t now = HAL_GetTick();
 
   #ifdef IS_MASTER
-  controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
-  controls_update_adsr(&adsr_param);
+  if(now - last_controls_poll >= 20){
+	  controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
+  	  controls_update_adsr(&adsr_param);
+  	  handle_autoplay_button_pressed(now);
+  	  last_controls_poll = now;
+  }
   #endif
   if (now - last_poll >= 20)
   {
@@ -141,10 +146,6 @@ void main_runtime_iter(void)
     #else
     #endif
   }
-  
-  #ifdef IS_MASTER
-  handle_autoplay_button_pressed(now);
-  #endif
 }
 
 /* USER CODE END 0 */

@@ -7,25 +7,21 @@
 
 #include <math.h>
 
-#define CONTROL_SMOOTHING   0.50f
+#define CONTROL_SMOOTHING   0.125f
 #define BUTTON_DEBOUNCE_MS  25U
 
-/* PB9 low selects the ADSR mux mode. */
-#define CONTROLS_MODE_PIN GPIO_PIN_9
-#define CONTROLS_MODE_PORT GPIOB
+/* Waveform, volume oscillator, and master volume. */
+#define RISE_MUX_CH         0
+#define FALL_MUX_CH         1
+#define VOSC_FREQUENCY_CH   9
+#define VOSC_STRENGTH_CH    10
+#define MASTER_VOLUME_CH    11
 
-/* Mode 1: waveform, volume oscillator, and master volume. */
-#define RISE_MUX_CH         1
-#define FALL_MUX_CH         2
-#define VOSC_FREQUENCY_CH   3
-#define VOSC_STRENGTH_CH    4
-#define MASTER_VOLUME_CH    5
-
-/* Mode 2: ADSR parameters. */
-#define ADSR_ATTACK_MUX_CH   1
-#define ADSR_DECAY_MUX_CH    2
-#define ADSR_SUSTAIN_MUX_CH  3
-#define ADSR_RELEASE_MUX_CH  4
+/* ADSR parameters. */
+#define ADSR_ATTACK_MUX_CH   2
+#define ADSR_DECAY_MUX_CH    3
+#define ADSR_SUSTAIN_MUX_CH  4
+#define ADSR_RELEASE_MUX_CH  5
 
 typedef struct {
     GPIO_PinState raw_state;
@@ -35,17 +31,21 @@ typedef struct {
 
 static DebouncedButton s_btn1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+
 static float s_smoothed_rise  = 0.5f;
 static float s_smoothed_fall  = 0.5f;
+static float s_smoothed_vosc_frequency = 0.5f;
+static float s_smoothed_vosc_strength = 0.5f;
+static float s_smoothed_master_volume = 0.5f;
+
 static float s_smoothed_attack  = 0.0f;
 static float s_smoothed_decay   = 0.0f;
 static float s_smoothed_sustain = 0.0f;
 static float s_smoothed_release = 0.0f;
-static uint8_t s_adsr_mode = 0;
-static GPIO_PinState s_last_mode_pin = GPIO_PIN_SET;
 
 static float adc_value_to_ratio(uint16_t adc_value);
-static float adc_value_to_master_volume(uint16_t adc_value);
+static float ratio_to_master_volume(float control);
+static float smooth_control(float new_value, float old_value);
 static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape *shape);
 static float read_smoothed_pot(uint8_t mux_ch, float *smoothed);
 static uint32_t pot_to_ms(float pot, float max_ms);
@@ -54,25 +54,27 @@ void controls_init(void) { /* mux and GPIO already inited by CubeMX */ }
 
 void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *master_volume)
 {
-    const GPIO_PinState mode_pin = HAL_GPIO_ReadPin(CONTROLS_MODE_PORT, CONTROLS_MODE_PIN);
-    if (s_last_mode_pin == GPIO_PIN_SET && mode_pin == GPIO_PIN_RESET)
-        s_adsr_mode = !s_adsr_mode;
-    s_last_mode_pin = mode_pin;
-
-    if (s_adsr_mode)
-        return;
-
-    s_smoothed_rise += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(RISE_MUX_CH)) - s_smoothed_rise);
-    s_smoothed_fall += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(FALL_MUX_CH)) - s_smoothed_fall);
+    s_smoothed_rise = smooth_control(adc_value_to_ratio(mux_read(RISE_MUX_CH)), s_smoothed_rise);
+    s_smoothed_fall = smooth_control(adc_value_to_ratio(mux_read(FALL_MUX_CH)), s_smoothed_fall);
     cfg->rise_pct = s_smoothed_rise;
     cfg->fall_pct = s_smoothed_fall;
     
-    vosc->frequency = VOL_OSC_MIN_HZ
-                    + (adc_value_to_ratio(mux_read(VOSC_FREQUENCY_CH))
-                      * (VOL_OSC_MAX_HZ - VOL_OSC_MIN_HZ)
-                      );
-    vosc->strength = adc_value_to_ratio(mux_read(VOSC_STRENGTH_CH));
-    *master_volume = adc_value_to_master_volume(mux_read(MASTER_VOLUME_CH));
+    s_smoothed_vosc_frequency = smooth_control(
+        adc_value_to_ratio(mux_read(VOSC_FREQUENCY_CH)), s_smoothed_vosc_frequency
+    );
+    s_smoothed_vosc_strength = smooth_control(
+        adc_value_to_ratio(mux_read(VOSC_STRENGTH_CH)), s_smoothed_vosc_strength
+    );
+    s_smoothed_master_volume = smooth_control(
+        adc_value_to_ratio(mux_read(MASTER_VOLUME_CH)), s_smoothed_master_volume
+    );
+
+    vosc->frequency = (
+        VOL_OSC_MIN_HZ
+        + s_smoothed_vosc_frequency * (VOL_OSC_MAX_HZ - VOL_OSC_MIN_HZ)
+    );
+    vosc->strength = s_smoothed_vosc_strength;
+    *master_volume = ratio_to_master_volume(s_smoothed_master_volume);
 
     update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12), &cfg->rise_shape);
     update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_11), &cfg->fall_shape);
@@ -80,15 +82,21 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
 
 void controls_update_adsr(AdsrParam *adsr)
 {
-    if (!s_adsr_mode)
-        return;
-
     adsr_set_params(
         adsr,
-        pot_to_ms(read_smoothed_pot(ADSR_ATTACK_MUX_CH, &s_smoothed_attack), ADSR_ATTACK_MAX_MS),
-        pot_to_ms(read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay), ADSR_DECAY_MAX_MS),
+        pot_to_ms(
+            read_smoothed_pot(ADSR_ATTACK_MUX_CH, &s_smoothed_attack),
+            ADSR_ATTACK_MAX_MS
+        ),
+        pot_to_ms(
+            read_smoothed_pot(ADSR_DECAY_MUX_CH, &s_smoothed_decay),
+            ADSR_DECAY_MAX_MS
+        ),
         read_smoothed_pot(ADSR_SUSTAIN_MUX_CH, &s_smoothed_sustain),
-        pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS),
+        pot_to_ms(
+            read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release),
+            ADSR_RELEASE_MAX_MS
+        ),
         AUDIO_SAMPLE_RATE_HZ
     );
 }
@@ -111,9 +119,8 @@ static float adc_value_to_ratio(uint16_t adc_value)
   return (ADC_CONTROL_MAXF - raw) * ADC_CONTROL_RANGE_RECIP;
 }
 
-static float adc_value_to_master_volume(uint16_t adc_value)
+static float ratio_to_master_volume(float control)
 {
-    const float control = adc_value_to_ratio(adc_value);
     const float volume_cutoff_control = 0.05f;
     const float volume_midpoint = 0.5f;
     const float volume_linear_range = volume_midpoint - volume_cutoff_control;
@@ -128,9 +135,14 @@ static float adc_value_to_master_volume(uint16_t adc_value)
 
     return MASTER_VOLUME_MID
          + (
-          ((control-volume_midpoint)/volume_override_range)
-          * (MASTER_VOLUME_MAX - MASTER_VOLUME_MID)
+             ((control - volume_midpoint) / volume_override_range)
+             * (MASTER_VOLUME_MAX - MASTER_VOLUME_MID)
          );
+}
+
+static float smooth_control(float new_value, float old_value)
+{
+    return old_value + CONTROL_SMOOTHING * (new_value - old_value);
 }
 
 static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape *shape)
@@ -146,7 +158,7 @@ static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape
 
 static float read_smoothed_pot(uint8_t mux_ch, float *smoothed)
 {
-    *smoothed += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(mux_ch)) - *smoothed);
+    *smoothed = smooth_control(adc_value_to_ratio(mux_read(mux_ch)), *smoothed);
     return *smoothed;
 }
 
