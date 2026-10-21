@@ -59,6 +59,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+#ifdef IS_MASTER
 WaveformConfig waveform_config =
 {
     .rise_pct   = 0.50f,
@@ -93,7 +94,7 @@ VoiceManager voice_manager;
 float master_volume = 1.0f;
 
 ui_data_t ui_data;
-
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -200,7 +201,8 @@ int main(void)
   boot_calibrate();
   ui_init(&ui_data);
   #else
-  init_slave();
+  uint8_t slave_id_from_dip = read_slave_id_from_dip();
+  init_slave(slave_id_from_dip);
   #endif
   
   #ifdef TEST_WITHOUT_SLAVE
@@ -218,6 +220,13 @@ int main(void)
     update_ui_data();
     ui_task(&ui_data);
     #else
+    const uint8_t current_slave_id = read_slave_id_from_dip();
+    if (current_slave_id != slave_id_from_dip) {
+      slave_id_from_dip = current_slave_id;
+      init_slave(slave_id_from_dip);
+      continue;
+    }
+
     update_keyframe();
 
 	/*
@@ -235,6 +244,9 @@ int main(void)
         (i2c_err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
     	I2C1_Reset();
       continue;
+    }
+    if(i2c_err == 0){
+    	i2c_err = i2c_err;
     }
     #endif
 
@@ -466,10 +478,6 @@ static void mock_update_keyframe(void)
     first_packet = 0;
     return;
   }
-
-  /* C3/E3/G3, C4/E4/G4, and C5/E5/G5 map to slave IDs 3, 4, and 5. */
-  if (SLAVE_ID < 3 || SLAVE_ID > 5)
-    return;
 
   for (uint8_t i = 0; i < sizeof(chord_keys); ++i)
     g_keyframe.adc[chord_keys[i]] = PRESS_THRESHOLD + 1;

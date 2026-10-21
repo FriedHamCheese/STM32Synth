@@ -89,8 +89,8 @@ void main_runtime_iter();
 #define AUDIO_RIGHT_PWM_GPIO_Port GPIOA
 #define AUDIO_LEFT_PWM_Pin GPIO_PIN_3
 #define AUDIO_LEFT_PWM_GPIO_Port GPIOB
-#define DIP_1B4_Pin GPIO_PIN_4
-#define DIP_1B4_GPIO_Port GPIOB
+#define SW3_Pin GPIO_PIN_4
+#define SW3_GPIO_Port GPIOB
 #define SW4_Pin GPIO_PIN_5
 #define SW4_GPIO_Port GPIOB
 #define SW5_Pin GPIO_PIN_8

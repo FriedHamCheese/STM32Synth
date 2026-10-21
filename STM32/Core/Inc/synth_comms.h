@@ -9,10 +9,6 @@
 /* #define IS_MASTER */
 /* #define SLAVE_ID 0 */
 
-#ifndef SLAVE_ID
-#define SLAVE_ID 4
-#endif
-
 #ifndef PC_UNITTEST
 #include "stm32f4xx_hal.h"
 #endif
@@ -88,7 +84,8 @@ void note_off(uint8_t slave, uint8_t key);
 
 extern volatile KeyFrame g_keyframe;
 
-void init_slave(void);       /* configure I2C slave address, start listen_IT */
+uint8_t read_slave_id_from_dip(void);
+void init_slave(uint8_t slave_id); /* configure I2C slave address */
 void update_keyframe(void);  /* scan all 12 mux channels into g_keyframe */
 
 #ifndef PC_UNITTEST

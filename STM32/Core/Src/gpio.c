@@ -65,9 +65,9 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DIP_4_Pin DIP_2_Pin DIP_1_Pin DIP_1B4_Pin
+  /*Configure GPIO pins : DIP_4_Pin DIP_2_Pin DIP_1_Pin SW3_Pin
                            SW4_Pin SW5_Pin SW6_Pin */
-  GPIO_InitStruct.Pin = DIP_4_Pin|DIP_2_Pin|DIP_1_Pin|DIP_1B4_Pin
+  GPIO_InitStruct.Pin = DIP_4_Pin|DIP_2_Pin|DIP_1_Pin|SW3_Pin
                           |SW4_Pin|SW5_Pin|SW6_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;

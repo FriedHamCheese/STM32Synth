@@ -23,7 +23,7 @@ void I2C1_Reset(void)
     #ifndef IS_MASTER
     //MX's init has ownAddress as 0, causing timeouts for slave,
     //call init_slave() to set the address correctly.
-    init_slave();
+    init_slave(read_slave_id_from_dip());
     #endif
 }
 #endif
@@ -176,10 +176,25 @@ void stale_check(void)
 volatile KeyFrame g_keyframe = {0};
 static uint8_t s_tx_buf[sizeof(KeyFrame)];
 
-void init_slave(void)
+uint8_t read_slave_id_from_dip(void)
+{
+    uint8_t slave_id = 0;
+
+    /* DIP inputs use pull-ups, so a closed switch reads as GPIO_PIN_RESET. */
+    if (HAL_GPIO_ReadPin(DIP_1_GPIO_Port, DIP_1_Pin) == GPIO_PIN_RESET)
+        slave_id |= 1U;
+    if (HAL_GPIO_ReadPin(DIP_2_GPIO_Port, DIP_2_Pin) == GPIO_PIN_RESET)
+        slave_id |= 2U;
+    if (HAL_GPIO_ReadPin(DIP_4_GPIO_Port, DIP_4_Pin) == GPIO_PIN_RESET)
+        slave_id |= 4U;
+
+    return slave_id;
+}
+
+void init_slave(uint8_t slave_id)
 {
     HAL_I2C_DeInit(&hi2c1);
-    hi2c1.Init.OwnAddress1 = (uint32_t)((SLAVE_BASE_ADDR + SLAVE_ID) << 1);
+    hi2c1.Init.OwnAddress1 = (uint32_t)((SLAVE_BASE_ADDR + slave_id) << 1);
     if (HAL_I2C_Init(&hi2c1) != HAL_OK)
         Error_Handler();
     /* Blocking mock-slave test path: the main loop owns the transaction. */
