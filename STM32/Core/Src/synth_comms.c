@@ -4,6 +4,28 @@
 
 #ifndef PC_UNITTEST
 #include "i2c.h"
+
+/*
+ * For resetting both HAL and I2C hardware when a busy or timeout occurs.
+ * Most timeouts in HAL_I2C_Master_Receive() or HAL_I2C_Slave_Transmit() does not reset hardware state
+ * busy is a 20ms timeout for master receive that is observed to not reset after another call,
+ * while timeouts use a similar pattern to busy, so a preemptive reset is done for both master and slave
+ * to provide best reliability.
+ */
+void I2C1_Reset(void)
+{
+    HAL_I2C_DeInit(&hi2c1);
+    __HAL_RCC_I2C1_FORCE_RESET();
+    HAL_Delay(2);
+    __HAL_RCC_I2C1_RELEASE_RESET();
+    MX_I2C1_Init();
+
+    #ifndef IS_MASTER
+    //MX's init has ownAddress as 0, causing timeouts for slave,
+    //call init_slave() to set the address correctly.
+    init_slave();
+    #endif
+}
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -11,14 +33,14 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 #ifdef IS_MASTER
 
-volatile int16_t  g_keys[MAX_SLAVES][12]          = {0};
-volatile int16_t  g_baseline[MAX_SLAVES][12]      = {0};
-volatile int16_t  g_prev_keys[MAX_SLAVES][12]     = {0};
-volatile KeyState g_key_state[MAX_SLAVES][12]     = {KEY_IDLE};
-volatile int16_t  g_key_velocity[MAX_SLAVES][12]  = {0};
-volatile uint32_t g_last_update[MAX_SLAVES]       = {0};
-volatile uint32_t g_press_start[MAX_SLAVES][12]   = {0};
-volatile uint8_t  g_press_moving[MAX_SLAVES][12]  = {0};
+volatile int16_t  g_keys[SLAVE_SLOTS][12]          = {0};
+volatile int16_t  g_baseline[SLAVE_SLOTS][12]      = {0};
+volatile int16_t  g_prev_keys[SLAVE_SLOTS][12]     = {0};
+volatile KeyState g_key_state[SLAVE_SLOTS][12]     = {KEY_IDLE};
+volatile int16_t  g_key_velocity[SLAVE_SLOTS][12]  = {0};
+volatile uint32_t g_last_update[SLAVE_SLOTS]       = {0};
+volatile uint32_t g_press_start[SLAVE_SLOTS][12]   = {0};
+volatile uint8_t  g_press_moving[SLAVE_SLOTS][12]  = {0};
 uint8_t           g_slave_count                   = 0;
 
 static KeyFrame s_frame;
@@ -39,7 +61,8 @@ int16_t map_velocity(uint32_t delta_ms)
 #ifndef PC_UNITTEST
 void boot_calibrate(void)
 {
-    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
+    const uint8_t first_slave_id = 1; /* skip octave 0; slave IDs are 1-based */
+    for (uint8_t s = first_slave_id; s <= MAX_SLAVES; s++) {
         if (HAL_I2C_Master_Receive(&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
                                    (uint8_t *)&s_frame, sizeof(s_frame),
                                    I2C_TIMEOUT_MS) == HAL_OK) {
@@ -53,7 +76,7 @@ void boot_calibrate(void)
 void scan_slaves(void)
 {
     g_slave_count = 0;
-    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
+    for (uint8_t s = 1; s <= MAX_SLAVES; s++) {
         uint8_t dummy;
         if (HAL_I2C_Master_Receive(&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
                                    &dummy, 1, I2C_TIMEOUT_MS) == HAL_OK)
@@ -64,13 +87,23 @@ void scan_slaves(void)
 
 void poll_slaves(void)
 {
-    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
+    const uint8_t first_slave_id = 1; /* skip octave 0; slave IDs are 1-based */
+    for (uint8_t s = first_slave_id; s <= MAX_SLAVES; s++) {
     	const HAL_StatusTypeDef i2c_status = HAL_I2C_Master_Receive(
 			&hi2c1, (uint16_t)((SLAVE_BASE_ADDR + s) << 1),
 			(uint8_t *)&s_frame, sizeof(s_frame),
-			2
+			I2C_TIMEOUT_MS
 		);
     	volatile const uint32_t err = HAL_I2C_GetError(&hi2c1);
+        if (i2c_status == HAL_BUSY) {
+            /* Recover only when the peripheral remains busy after a timeout. */
+            I2C1_Reset();
+            continue;
+        }
+        if ((err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
+            I2C1_Reset();
+            continue;
+        }
         if (i2c_status == HAL_OK) {
             for (uint8_t k = 0; k < 12; k++)
                 g_keys[s][k] = s_frame.adc[k];
@@ -85,7 +118,8 @@ void process_keys(VoiceManager *vm,
                   void    (*note_off)(VoiceManager*, uint16_t),
                   uint32_t now_ms
 ){
-    for (uint8_t s = 0; s < MAX_SLAVES; s++) {
+    const uint8_t first_slave_id = 1; /* skip octave 0; slave IDs are 1-based */
+    for (uint8_t s = first_slave_id; s <= MAX_SLAVES; s++) {
         for (uint8_t k = 0; k < 12; k++) {
             int16_t depth = g_keys[s][k] - g_baseline[s][k];
             
@@ -156,7 +190,7 @@ void update_keyframe(void)
     for (uint8_t k = 0; k < 12; k++)
         g_keyframe.adc[k] = (int16_t)(mux_read(k) - 2048);
 }
-
+/*
 void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c,
                            uint8_t TransferDirection,
                            uint16_t AddrMatchCode)
@@ -178,5 +212,5 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
     __HAL_I2C_CLEAR_FLAG(hi2c, I2C_FLAG_AF | I2C_FLAG_BERR | I2C_FLAG_ARLO | I2C_FLAG_OVR);
     HAL_I2C_EnableListen_IT(hi2c);
 }
-
+*/
 #endif /* !IS_MASTER */

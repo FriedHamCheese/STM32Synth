@@ -219,10 +219,23 @@ int main(void)
     ui_task(&ui_data);
     #else
     update_keyframe();
-    volatile const HAL_StatusTypeDef err = HAL_I2C_Slave_Transmit(&hi2c1,
+
+	/*
+	 * Having both to share the same bare-minimum timeout 1ms period
+	 * may introduce a condition where master and slave will always timeout due to mis-alignment.
+	 * Master uses the shorter 1ms value to reserve CPU time, while slave is less constrained.
+	 */
+    const uint32_t misalign_tolerance = 2;
+    const HAL_StatusTypeDef i2c_status = HAL_I2C_Slave_Transmit(&hi2c1,
                            (uint8_t *)&g_keyframe,
                            sizeof(g_keyframe),
-                           100);
+                           I2C_TIMEOUT_MS*misalign_tolerance);
+    volatile uint32_t i2c_err = HAL_I2C_GetError(&hi2c1);
+    if (i2c_status == HAL_BUSY ||
+        (i2c_err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
+    	I2C1_Reset();
+      continue;
+    }
     #endif
 
     /* USER CODE END WHILE */

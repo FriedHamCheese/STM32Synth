@@ -21,15 +21,16 @@
 #include <stdint.h>
 #include <string.h>
 
-#define MAX_SLAVES        8
+#define MAX_SLAVES        6
+#define SLAVE_SLOTS       (MAX_SLAVES + 1) /* IDs are 1-based; slot 0 unused */
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
-#define I2C_TIMEOUT_MS    2
-#define PRESS_THRESHOLD   -500    /* signed ADC delta from baseline — tune per H3503 */
+#define I2C_TIMEOUT_MS    1
+#define PRESS_THRESHOLD   -300    /* signed ADC delta from baseline — tune per H3503 */
 #define STALE_TIMEOUT_MS  30
 #define MIDI_BASE_NOTE    48     /* C3 — key 0 on leftmost slave */
 
 //idfk man
-#define MOVE_THRESHOLD -200
+#define MOVE_THRESHOLD -150
 
 typedef enum { KEY_IDLE, KEY_PRESSED } KeyState;
 
@@ -37,24 +38,29 @@ typedef struct {
     int16_t adc[12];             /* signed: raw_adc - 2048 (offset binary → two's comp) */
 } KeyFrame;
 
+#ifndef PC_UNITTEST
+void I2C1_Reset(void);       /* reset I2C hardware and restore HAL state */
+#endif
+
+
 /* ── Master ─────────────────────────────────────────────────────────────── */
 #ifdef IS_MASTER
 
 //ADC value of hall effect sensors
-extern volatile int16_t  g_keys[MAX_SLAVES][12];
+extern volatile int16_t  g_keys[SLAVE_SLOTS][12];
 //ADC value of hall effect sensors set by boot_calibrate()
-extern volatile int16_t  g_baseline[MAX_SLAVES][12];
+extern volatile int16_t  g_baseline[SLAVE_SLOTS][12];
 //ADC value of hall effect sensors, set by process_keys() to be g_keys after function finishes
-extern volatile int16_t  g_prev_keys[MAX_SLAVES][12];
-extern volatile KeyState g_key_state[MAX_SLAVES][12];
+extern volatile int16_t  g_prev_keys[SLAVE_SLOTS][12];
+extern volatile KeyState g_key_state[SLAVE_SLOTS][12];
 //Set by process_keys() using map_velocity()
-extern volatile int16_t  g_key_velocity[MAX_SLAVES][12];
+extern volatile int16_t  g_key_velocity[SLAVE_SLOTS][12];
 //Set by poll_slaves() during retrieving g_keys as HAL_GetTick()
-extern volatile uint32_t g_last_update[MAX_SLAVES];
+extern volatile uint32_t g_last_update[SLAVE_SLOTS];
 //HAL_GetTick() when a key is considered moving down
-extern volatile uint32_t g_press_start[MAX_SLAVES][12];
+extern volatile uint32_t g_press_start[SLAVE_SLOTS][12];
 //1 if a key is considered moving down
-extern volatile uint8_t  g_press_moving[MAX_SLAVES][12];
+extern volatile uint8_t  g_press_moving[SLAVE_SLOTS][12];
 extern uint8_t           g_slave_count;
 
 int16_t map_velocity(uint32_t delta_ms);
