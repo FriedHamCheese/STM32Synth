@@ -41,6 +41,7 @@ volatile int16_t  g_key_velocity[SLAVE_SLOTS][12]  = {0};
 volatile uint32_t g_last_update[SLAVE_SLOTS]       = {0};
 volatile uint32_t g_press_start[SLAVE_SLOTS][12]   = {0};
 volatile uint8_t  g_press_moving[SLAVE_SLOTS][12]  = {0};
+volatile uint8_t  g_slave_fail_attempts[SLAVE_SLOTS] = {0};
 uint8_t           g_slave_count                   = 0;
 
 static KeyFrame s_frame;
@@ -59,6 +60,13 @@ int16_t map_velocity(uint32_t delta_ms)
 }
 
 #ifndef PC_UNITTEST
+void mark_slaves_disconnected(void)
+{
+    for (uint8_t s = 1; s <= MAX_SLAVES; s++) {
+        g_slave_fail_attempts[s] = SLAVE_FAIL_LIMIT;
+    }
+}
+
 void boot_calibrate(void)
 {
     const uint8_t first_slave_id = 1; /* skip octave 0; slave IDs are 1-based */
@@ -95,18 +103,31 @@ void poll_slaves(void)
 			I2C_TIMEOUT_MS
 		);
     	volatile const uint32_t err = HAL_I2C_GetError(&hi2c1);
-        if (i2c_status == HAL_BUSY) {
-            /* Recover only when the peripheral remains busy after a timeout. */
-            I2C1_Reset();
-            continue;
-        }
-        if ((err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
-            I2C1_Reset();
+        if (i2c_status != HAL_OK) {
+            if (g_slave_fail_attempts[s] < SLAVE_FAIL_LIMIT)
+                g_slave_fail_attempts[s]++;
+            if (g_slave_fail_attempts[s] == SLAVE_FAIL_LIMIT) {
+                for (uint8_t k = 0; k < 12; k++)
+                    g_keys[s][k] = g_baseline[s][k];
+            }
+
+            if (i2c_status == HAL_BUSY ||
+                (err & HAL_I2C_ERROR_TIMEOUT))
+                I2C1_Reset();
             continue;
         }
         if (i2c_status == HAL_OK) {
-            for (uint8_t k = 0; k < 12; k++)
-                g_keys[s][k] = s_frame.adc[k];
+            const uint8_t was_disconnected =
+                g_slave_fail_attempts[s] >= SLAVE_FAIL_LIMIT;
+            for (uint8_t k = 0; k < 12; k++){
+				g_keys[s][k] = s_frame.adc[k];
+			}
+            if (was_disconnected) {
+                for (uint8_t k = 0; k < 12; k++){
+                    g_baseline[s][k] = s_frame.adc[k];
+                }
+            }
+            g_slave_fail_attempts[s] = 0;
             g_last_update[s] = HAL_GetTick();
         }
     }
@@ -119,7 +140,11 @@ void process_keys(VoiceManager *vm,
                   uint32_t now_ms
 ){
     const uint8_t first_slave_id = 1; /* skip octave 0; slave IDs are 1-based */
-    for (uint8_t s = first_slave_id; s <= MAX_SLAVES; s++) {
+    for (volatile uint8_t s = first_slave_id; s <= MAX_SLAVES; s++) {
+    	if(s == first_slave_id){
+    		s = s;
+    	}
+
         for (uint8_t k = 0; k < 12; k++) {
             int16_t depth = g_keys[s][k] - g_baseline[s][k];
             

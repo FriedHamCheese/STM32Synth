@@ -198,6 +198,7 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
+  mark_slaves_disconnected();
   boot_calibrate();
   ui_init(&ui_data);
   #else
@@ -211,6 +212,15 @@ int main(void)
   #endif
   
   /* USER CODE END 2 */
+
+  #ifndef IS_MASTER
+  /*
+   * Give the board some time to have stable power rails for correct initial sensor readings,
+   * CPUs are fast yk
+   */
+  const uint16_t power_up_stablise_ms = 250;
+  HAL_Delay(power_up_stablise_ms);
+  #endif
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

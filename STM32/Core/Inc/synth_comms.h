@@ -19,6 +19,7 @@
 
 #define MAX_SLAVES        6
 #define SLAVE_SLOTS       (MAX_SLAVES + 1) /* IDs are 1-based; slot 0 unused */
+#define SLAVE_FAIL_LIMIT  5
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
 #define I2C_TIMEOUT_MS    1
 #define PRESS_THRESHOLD   -300    /* signed ADC delta from baseline — tune per H3503 */
@@ -57,11 +58,13 @@ extern volatile uint32_t g_last_update[SLAVE_SLOTS];
 extern volatile uint32_t g_press_start[SLAVE_SLOTS][12];
 //1 if a key is considered moving down
 extern volatile uint8_t  g_press_moving[SLAVE_SLOTS][12];
+extern volatile uint8_t  g_slave_fail_attempts[SLAVE_SLOTS];
 extern uint8_t           g_slave_count;
 
 int16_t map_velocity(uint32_t delta_ms);
 
 void boot_calibrate(void);   /* 200ms blocking cal at boot — call before scan_slaves */
+void mark_slaves_disconnected(void);
 //void scan_slaves(void);      /* probe 0x10..0x15, set g_slave_count */
 void poll_slaves(void);      /* read KeyFrame from each slave, update g_keys */
 /* threshold detect, note_on/note_off */
