@@ -42,6 +42,10 @@ void voice_manager_init(
 
 uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t velocity)
 {
+    const float max_velocity_recip = 1.0f/127.0f;
+    //Housing does not allow for reliable test, so dumb one for now
+    (void)velocity;
+    velocity = 127;
     uint8_t started = 0;
 
     if (manager == 0 ||
@@ -78,6 +82,7 @@ uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t v
             adsr_init(&manager->voices[i].envelope);
             adsr_note_on(&manager->voices[i].envelope);
             manager->voices[i].active = 1;
+            manager->voices[i].volume = (float)velocity * max_velocity_recip;
             started = 1;
         }
     }
@@ -118,7 +123,7 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     {
         if (manager->voices[i].active)
         {
-            volume = adsr_get_volume(&manager->voices[i].envelope, manager->adsr_param);
+            volume = adsr_get_volume(&manager->voices[i].envelope, manager->adsr_param) * manager->voices[i].volume;
 
             if (!adsr_is_active(&manager->voices[i].envelope))
             {

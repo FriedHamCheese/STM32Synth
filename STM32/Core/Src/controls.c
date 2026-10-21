@@ -2,21 +2,21 @@
 #include "mux_adc.h"
 #include "volume_oscillation.h"
 #include "audio_out.h"
+#include "audparam_ranges.h"
 #include "stm32f4xx_hal.h"
 
 #include <math.h>
 
 #define CONTROL_SMOOTHING   0.50f
 #define BUTTON_DEBOUNCE_MS  25U
-#define ADC_MAX_VALUE       4095.0f
 
 /* PB9 low selects the ADSR mux mode. */
 #define CONTROLS_MODE_PIN GPIO_PIN_9
 #define CONTROLS_MODE_PORT GPIOB
 
 /* Mode 1: waveform, volume oscillator, and master volume. */
-#define RISE_MUX_CH          1
-#define FALL_MUX_CH          2
+#define RISE_MUX_CH         1
+#define FALL_MUX_CH         2
 #define VOSC_FREQUENCY_CH   3
 #define VOSC_STRENGTH_CH    4
 #define MASTER_VOLUME_CH    5
@@ -26,12 +26,6 @@
 #define ADSR_DECAY_MUX_CH    2
 #define ADSR_SUSTAIN_MUX_CH  3
 #define ADSR_RELEASE_MUX_CH  4
-
-/* Time ranges for a full 0<->1 swing, pot fully left -> fully right */
-#define ADSR_MIN_MS          1.0f
-#define ADSR_ATTACK_MAX_MS   2000.0f
-#define ADSR_DECAY_MAX_MS    2000.0f
-#define ADSR_RELEASE_MAX_MS  4000.0f
 
 typedef struct {
     GPIO_PinState raw_state;
@@ -50,28 +44,13 @@ static float s_smoothed_release = 0.0f;
 static uint8_t s_adsr_mode = 0;
 static GPIO_PinState s_last_mode_pin = GPIO_PIN_SET;
 
-static float read_pot_normalized(uint8_t mux_ch)
-{
-    return 1.0f - (mux_read(mux_ch) * (1.0/ADC_MAX_VALUE));
-}
+static float adc_value_to_ratio(uint16_t adc_value);
+static float adc_value_to_master_volume(uint16_t adc_value);
+static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape *shape);
+static float read_smoothed_pot(uint8_t mux_ch, float *smoothed);
+static uint32_t pot_to_ms(float pot, float max_ms);
 
 void controls_init(void) { /* mux and GPIO already inited by CubeMX */ }
-
-uint8_t controls_is_adsr_mode(void)
-{
-    return s_adsr_mode;
-}
-
-static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape *shape)
-{
-    uint32_t now = HAL_GetTick();
-    if (raw != btn->raw_state) { btn->raw_state = raw; btn->changed_at = now; }
-    if ((raw != btn->stable_state) && ((now - btn->changed_at) >= BUTTON_DEBOUNCE_MS)) {
-        btn->stable_state = raw;
-        if (btn->stable_state == GPIO_PIN_RESET)
-            *shape = (WaveShape)((*shape + 1U) % 3U);
-    }
-}
 
 void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *master_volume)
 {
@@ -79,43 +58,24 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
     if (s_last_mode_pin == GPIO_PIN_SET && mode_pin == GPIO_PIN_RESET)
         s_adsr_mode = !s_adsr_mode;
     s_last_mode_pin = mode_pin;
-/*
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13,
-                      s_adsr_mode ? GPIO_PIN_RESET : GPIO_PIN_SET);*/
 
     if (s_adsr_mode)
         return;
 
-    s_smoothed_rise += CONTROL_SMOOTHING * (read_pot_normalized(RISE_MUX_CH) - s_smoothed_rise);
-    s_smoothed_fall += CONTROL_SMOOTHING * (read_pot_normalized(FALL_MUX_CH) - s_smoothed_fall);
+    s_smoothed_rise += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(RISE_MUX_CH)) - s_smoothed_rise);
+    s_smoothed_fall += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(FALL_MUX_CH)) - s_smoothed_fall);
     cfg->rise_pct = s_smoothed_rise;
     cfg->fall_pct = s_smoothed_fall;
     
-    const float volume_osc_min_hz = 0.1f;
-    const float volume_osc_max_hz = 20.0f;
-    const float master_volume_max_value = 10.0f;
-    vosc->frequency = volume_osc_min_hz
-                    + (read_pot_normalized(VOSC_FREQUENCY_CH)
-                      * (volume_osc_max_hz - volume_osc_min_hz)
+    vosc->frequency = VOL_OSC_MIN_HZ
+                    + (adc_value_to_ratio(mux_read(VOSC_FREQUENCY_CH))
+                      * (VOL_OSC_MAX_HZ - VOL_OSC_MIN_HZ)
                       );
-    vosc->strength = read_pot_normalized(VOSC_STRENGTH_CH);
-    *master_volume = read_pot_normalized(MASTER_VOLUME_CH) * master_volume_max_value;
+    vosc->strength = adc_value_to_ratio(mux_read(VOSC_STRENGTH_CH));
+    *master_volume = adc_value_to_master_volume(mux_read(MASTER_VOLUME_CH));
 
     update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12), &cfg->rise_shape);
     update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_11), &cfg->fall_shape);
-}
-
-static float read_smoothed_pot(uint8_t mux_ch, float *smoothed)
-{
-    *smoothed += CONTROL_SMOOTHING * (read_pot_normalized(mux_ch) - *smoothed);
-    return *smoothed;
-}
-
-/* Exponential so each part of the pot's turn feels equally useful:
-   with 1-2000ms, the middle of the pot is ~45ms rather than ~1000ms. */
-static uint32_t pot_to_ms(float pot, float max_ms)
-{
-    return (uint32_t)(ADSR_MIN_MS * powf(max_ms / ADSR_MIN_MS, pot) + 0.5f);
 }
 
 void controls_update_adsr(AdsrParam *adsr)
@@ -131,4 +91,68 @@ void controls_update_adsr(AdsrParam *adsr)
         pot_to_ms(read_smoothed_pot(ADSR_RELEASE_MUX_CH, &s_smoothed_release), ADSR_RELEASE_MAX_MS),
         AUDIO_SAMPLE_RATE_HZ
     );
+}
+
+static float adc_value_to_ratio(uint16_t adc_value)
+{
+  /*
+  This is a function that scales ADC readings to 10-3990 scale so that potentiometer full off/on seems linear.
+  */
+  const float ADC_CONTROL_MINF = 10.0f;
+  const float ADC_CONTROL_MAXF = 3990.0f;
+  const float ADC_CONTROL_RANGE_RECIP = 1.0f / (ADC_CONTROL_MAXF - ADC_CONTROL_MINF);
+  
+  float raw = (float)adc_value;
+
+  if (raw < ADC_CONTROL_MINF) raw = ADC_CONTROL_MINF;
+  if (raw > ADC_CONTROL_MAXF) raw = ADC_CONTROL_MAXF;
+
+  /* it is max-raw because left-most pot rotation is actually increasing the voltage/ADC*/
+  return (ADC_CONTROL_MAXF - raw) * ADC_CONTROL_RANGE_RECIP;
+}
+
+static float adc_value_to_master_volume(uint16_t adc_value)
+{
+    const float control = adc_value_to_ratio(adc_value);
+    const float volume_cutoff_control = 0.05f;
+    const float volume_midpoint = 0.5f;
+    const float volume_linear_range = volume_midpoint - volume_cutoff_control;
+    const float volume_override_range = 1.0f - volume_midpoint;
+
+    if (control <= volume_cutoff_control)
+        return MASTER_VOLUME_MIN;
+
+    if (control <= volume_midpoint)
+        return ((control - volume_cutoff_control) / volume_linear_range)
+             * MASTER_VOLUME_MID;
+
+    return MASTER_VOLUME_MID
+         + (
+          ((control-volume_midpoint)/volume_override_range)
+          * (MASTER_VOLUME_MAX - MASTER_VOLUME_MID)
+         );
+}
+
+static void update_one_button(DebouncedButton *btn, GPIO_PinState raw, WaveShape *shape)
+{
+    uint32_t now = HAL_GetTick();
+    if (raw != btn->raw_state) { btn->raw_state = raw; btn->changed_at = now; }
+    if ((raw != btn->stable_state) && ((now - btn->changed_at) >= BUTTON_DEBOUNCE_MS)) {
+        btn->stable_state = raw;
+        if (btn->stable_state == GPIO_PIN_RESET)
+            *shape = (WaveShape)((*shape + 1U) % 3U);
+    }
+}
+
+static float read_smoothed_pot(uint8_t mux_ch, float *smoothed)
+{
+    *smoothed += CONTROL_SMOOTHING * (adc_value_to_ratio(mux_read(mux_ch)) - *smoothed);
+    return *smoothed;
+}
+
+/* Exponential so each part of the pot's turn feels equally useful:
+   with 1-2000ms, the middle of the pot is ~45ms rather than ~1000ms. */
+static uint32_t pot_to_ms(float pot, float max_ms)
+{
+    return (uint32_t)(ADSR_MIN_MS * powf(max_ms / ADSR_MIN_MS, pot) + 0.5f);
 }

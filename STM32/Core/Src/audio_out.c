@@ -2,6 +2,7 @@
 #include "stm32f4xx_hal.h"
 #include "tim.h"
 #include "volume_oscillation.h"
+#include "main.h"
 
 extern void periodic_loop(void);
 
@@ -31,7 +32,7 @@ inline void set_audio_output_value(wavegen_output_t left, wavegen_output_t right
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM3) {
-        periodic_loop();
+        main_runtime_iter();
         return;
     }
 

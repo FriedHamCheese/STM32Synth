@@ -1,0 +1,28 @@
+#ifndef AUDPARAM_RANGES_H
+#define AUDPARAM_RANGES_H
+
+#define WAVE_RISE_MIN_PCT 0.0f
+#define WAVE_RISE_MAX_PCT 1.0f
+#define WAVE_FALL_MIN_PCT 0.0f
+#define WAVE_FALL_MAX_PCT 1.0f
+
+#define ADSR_MIN_MS          1.0f
+#define ADSR_ATTACK_MAX_MS   2000.0f
+#define ADSR_DECAY_MAX_MS    2000.0f
+#define ADSR_RELEASE_MAX_MS  4000.0f
+
+#define VOL_OSC_MIN_DEPTH 0.0f
+#define VOL_OSC_MAX_DEPTH 1.0f
+#define VOL_OSC_MIN_HZ 0.1f
+#define VOL_OSC_MID_HZ 1.0f
+#define VOL_OSC_MAX_HZ 30.0f
+
+#define MASTER_VOLUME_MIN 0.0f
+#define MASTER_VOLUME_MID 1.0f
+#define MASTER_VOLUME_MAX 10.0f
+
+#define WAVE_PWM_OSC_MIN_HZ 0.1f
+#define WAVE_PWM_OSC_MID_HZ 1.0f
+#define WAVE_PWM_OSC_MAX_HZ 10.0f
+
+#endif
