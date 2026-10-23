@@ -93,8 +93,6 @@ AdsrParam adsr_param;
 VoiceManager voice_manager;
 //Master volume can be from 0.0 to 10.0x, overdrive woo
 float master_volume = 1.0f;
-
-ui_data_t ui_data;
 #endif
 /* USER CODE END PV */
 
@@ -203,7 +201,7 @@ int main(void)
   set_audio_output_value(0, 0);
   mark_slaves_disconnected();
   boot_calibrate();
-  ui_init(&ui_data);
+  ui_init();
   #else
   const uint32_t power_up_stabilise_ms = 100;
   HAL_Delay(power_up_stabilise_ms);
@@ -229,7 +227,7 @@ int main(void)
   {
     #ifdef IS_MASTER
     update_ui_data();
-    ui_task(&ui_data);
+    ui_task();
     #else
     const uint8_t current_slave_id = read_slave_id_from_dip();
     if (current_slave_id != slave_id_from_dip) {
@@ -400,34 +398,28 @@ static void update_ui_data(void)
   ui_data.wave_sample = waveform_get_point_as_amplitude;
   ui_data.rise_pct = waveform_config.rise_pct * 100.0f;
   ui_data.fall_pct = waveform_config.fall_pct * 100.0f;
+  
   ui_data.adsr_valid = true;
   ui_data.attack_s = ui_adsr_rate_to_seconds(adsr_param.attack_rate);
   ui_data.decay_s = ui_adsr_rate_to_seconds(adsr_param.decay_rate);
   ui_data.sustain = adsr_param.sustain_level;
   ui_data.release_s = ui_adsr_rate_to_seconds(adsr_param.release_rate);
+  
   ui_data.lfo_depth = volume_oscillator_param.strength;
   ui_data.lfo_hz = volume_oscillator_param.frequency;
+  
   ui_data.volume_valid = true;
   ui_data.volume = master_volume;
-  
-  /*
-  uiv2 provisions:
-  - currently has
-    if(autoplay_song_index == autoplay_pause_index) 
-      ui_data.autoplay_label = idk empty or manual play
-    else
-      ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index]
-  - highly likely to:
-    ui_data.wave_center_oscillate_hz = 0.0(off) to 20.0hz
-  - might:
-    ui_data.lowpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
-    ui_data.highpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
-    only either will be on, or both off; they will use the same knob
+
+  if(autoplay_song_index == autoplay_pause_index) 
+    ui_data.autoplay_label = NULL;
+  else
+    ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index];
+
+  ui_data.wave_center_osc_valid = true;
+  ui_data.wave_center_osc_hz = 0.0;
     
-    ui_data.filter_adsr_strength = 0.0 to 1.0
-    ui_data.filter_fixed_strength = 0.0 to 1.0
-    adsr and fixed strength shares same knob
-  */
+  ui_data.filter_valid = false;  
 }
 
 static void handle_autoplay_button_pressed(uint32_t now_ms)

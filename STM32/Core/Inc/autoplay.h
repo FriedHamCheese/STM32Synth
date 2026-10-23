@@ -29,7 +29,7 @@ typedef struct
 typedef struct
 {
     const AutoplayStep *steps[AUTOPLAY_SONG_COUNT];
-    const char *label[AUTOPLAY_SONG_COUNT];
+    const char *labels[AUTOPLAY_SONG_COUNT];
     uint8_t lengths[AUTOPLAY_SONG_COUNT];
 } AutoplaySongList;
 

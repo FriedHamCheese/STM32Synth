@@ -124,7 +124,7 @@ const AutoplayStep t2theme[] = {
 
 const AutoplaySongList autoplay_song_list = {
   .steps = { virtinst, t2theme },
-  .label = { "Virtual Insanity Intro", "Terminator 2 Theme" },
+  .labels = { "Virtual Insanity Intro", "Terminator 2 Theme" },
   .lengths = {
     (uint8_t)(sizeof(virtinst) / sizeof(virtinst[0])),
     (uint8_t)(sizeof(t2theme) / sizeof(t2theme[0]))
