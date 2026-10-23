@@ -213,6 +213,7 @@ int main(void)
   HAL_I2C_Slave_Transmit_DMA(&hi2c1,
                            (uint8_t *)&g_keyframe,
                            sizeof(g_keyframe));
+  g_last_dma_complete_ms = HAL_GetTick();
   #endif
   
   #ifdef TEST_WITHOUT_SLAVE
@@ -237,6 +238,22 @@ int main(void)
     }
 
     update_keyframe();
+
+    if ((HAL_GetTick() - g_last_dma_complete_ms) > DMA_FREEZE_TIMEOUT_MS) {
+      //Cannot rely on DMA completed callback to reset this, so will do manual DMA-bit disable
+      CLEAR_BIT(hi2c1.Instance->CR2, I2C_CR2_DMAEN);
+      I2C1_Reset();
+      HAL_I2C_Slave_Transmit_DMA(&hi2c1,
+                                 (uint8_t *)&g_keyframe,
+                                 sizeof(g_keyframe));
+      g_last_dma_complete_ms = HAL_GetTick();
+      continue;
+    }
+
+    const volatile HAL_DMA_StateTypeDef dma_state = HAL_DMA_GetState(hi2c1.hdmatx);
+    const volatile uint32_t dma_error = HAL_DMA_GetError(hi2c1.hdmatx);
+    volatile const I2C_HandleTypeDef ref = hi2c1;
+    if(dma_state);
     #endif
 
     /* USER CODE END WHILE */

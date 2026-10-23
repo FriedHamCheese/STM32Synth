@@ -199,6 +199,7 @@ void stale_check(void)
 #include "mux_adc.h"
 
 volatile KeyFrame g_keyframe = {0};
+volatile uint32_t g_last_dma_complete_ms = 0U;
 static KeyFrame s_dma_keyframe;
 static volatile uint8_t s_pending_slave_id;
 static volatile uint8_t s_slave_id_change_pending;
@@ -245,6 +246,8 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
     if (hi2c != &hi2c1)
         return;
+
+    g_last_dma_complete_ms = HAL_GetTick();
 
     if (s_slave_id_change_pending) {
         const uint8_t new_slave_id = s_pending_slave_id;
