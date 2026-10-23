@@ -200,6 +200,8 @@ void stale_check(void)
 
 volatile KeyFrame g_keyframe = {0};
 static KeyFrame s_dma_keyframe;
+static volatile uint8_t s_pending_slave_id;
+static volatile uint8_t s_slave_id_change_pending;
 
 uint8_t read_slave_id_from_dip(void)
 {
@@ -224,6 +226,16 @@ void init_slave(uint8_t slave_id)
         Error_Handler();
 }
 
+void request_slave_id_change(uint8_t slave_id)
+{
+    /*
+    Reasoning behind request for slave octave /i2c address change is because of parallel DMA transfers.
+    We rely on the transfer completed callback to change the address since it guarantees no parallel i2c activity.
+    */
+    s_pending_slave_id = slave_id;
+    s_slave_id_change_pending = 1U;
+}
+
 void update_keyframe(void)
 {
     for (uint8_t k = 0; k < 12; k++)
@@ -234,7 +246,17 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
     if (hi2c != &hi2c1)
         return;
 
-    memcpy(&s_dma_keyframe, &g_keyframe, sizeof(s_dma_keyframe));
+    if (s_slave_id_change_pending) {
+        const uint8_t new_slave_id = s_pending_slave_id;
+        s_slave_id_change_pending = 0U;
+        HAL_I2C_DeInit(&hi2c1);
+        hi2c1.Init.OwnAddress1 =
+            (uint32_t)((SLAVE_BASE_ADDR + new_slave_id) << 1);
+        if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+            Error_Handler();
+    }
+
+    memcpy(&s_dma_keyframe, (void*)&g_keyframe, sizeof(s_dma_keyframe));
     HAL_I2C_Slave_Transmit_DMA(hi2c,
                                (uint8_t *)&s_dma_keyframe,
                                sizeof(s_dma_keyframe));

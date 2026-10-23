@@ -89,6 +89,7 @@ extern volatile KeyFrame g_keyframe;
 
 uint8_t read_slave_id_from_dip(void);
 void init_slave(uint8_t slave_id); /* configure I2C slave address */
+void request_slave_id_change(uint8_t slave_id);
 void update_keyframe(void);  /* scan all 12 mux channels into g_keyframe */
 
 #ifndef PC_UNITTEST

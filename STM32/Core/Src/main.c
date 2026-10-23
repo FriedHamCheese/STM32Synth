@@ -209,9 +209,10 @@ int main(void)
   HAL_Delay(power_up_stabilise_ms);
   uint8_t slave_id_from_dip = read_slave_id_from_dip();
   init_slave(slave_id_from_dip);
+  //We rely on completed callback for self-calling and address changing, see request_slave_id_change()
   HAL_I2C_Slave_Transmit_DMA(&hi2c1,
-                             (uint8_t *)&g_keyframe,
-                             sizeof(g_keyframe));
+                           (uint8_t *)&g_keyframe,
+                           sizeof(g_keyframe));
   #endif
   
   #ifdef TEST_WITHOUT_SLAVE
@@ -232,8 +233,7 @@ int main(void)
     const uint8_t current_slave_id = read_slave_id_from_dip();
     if (current_slave_id != slave_id_from_dip) {
       slave_id_from_dip = current_slave_id;
-      init_slave(slave_id_from_dip);
-      continue;
+      request_slave_id_change(slave_id_from_dip);
     }
 
     update_keyframe();
