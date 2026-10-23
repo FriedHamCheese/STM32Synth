@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dma.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -179,6 +180,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
@@ -203,8 +205,13 @@ int main(void)
   boot_calibrate();
   ui_init(&ui_data);
   #else
+  const uint32_t power_up_stabilise_ms = 100;
+  HAL_Delay(power_up_stabilise_ms);
   uint8_t slave_id_from_dip = read_slave_id_from_dip();
   init_slave(slave_id_from_dip);
+  HAL_I2C_Slave_Transmit_DMA(&hi2c1,
+                             (uint8_t *)&g_keyframe,
+                             sizeof(g_keyframe));
   #endif
   
   #ifdef TEST_WITHOUT_SLAVE
@@ -213,15 +220,6 @@ int main(void)
   #endif
   
   /* USER CODE END 2 */
-
-  #ifndef IS_MASTER
-  /*
-   * Give the board some time to have stable power rails for correct initial sensor readings,
-   * CPUs are fast yk
-   */
-  const uint16_t power_up_stablise_ms = 250;
-  HAL_Delay(power_up_stablise_ms);
-  #endif
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -239,26 +237,6 @@ int main(void)
     }
 
     update_keyframe();
-
-	/*
-	 * Having both to share the same bare-minimum timeout 1ms period
-	 * may introduce a condition where master and slave will always timeout due to mis-alignment.
-	 * Master uses the shorter 1ms value to reserve CPU time, while slave is less constrained.
-	 */
-    const uint32_t misalign_tolerance = 2;
-    const HAL_StatusTypeDef i2c_status = HAL_I2C_Slave_Transmit(&hi2c1,
-                           (uint8_t *)&g_keyframe,
-                           sizeof(g_keyframe),
-                           I2C_TIMEOUT_MS*misalign_tolerance);
-    volatile uint32_t i2c_err = HAL_I2C_GetError(&hi2c1);
-    if (i2c_status == HAL_BUSY ||
-        (i2c_err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
-    	I2C1_Reset();
-      continue;
-    }
-    if(i2c_err == 0){
-    	i2c_err = i2c_err;
-    }
     #endif
 
     /* USER CODE END WHILE */
