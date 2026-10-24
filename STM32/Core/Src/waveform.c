@@ -97,7 +97,6 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
     float fall;
     float hold;
     float total;
-    float half_phase;
     float value;
 
     if (config == NULL ||
@@ -124,44 +123,49 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
         rise /= total;
         fall /= total;
     }
+    
+    float local_midpoint = config->midpoint;
+    if(local_midpoint <= 0.0f){
+      local_midpoint = 0.001f;
+    }
 
     hold = 1.0f - rise - fall;
 
-    if (phase < 0.5f)
+    if (phase < local_midpoint)
     {
-        half_phase = phase * 2.0f;
+        const float crest_ratio = phase/local_midpoint;
 
-        if (half_phase < rise)
+        if (crest_ratio < rise)
         {
-            float x = half_phase / rise;
+            float x = crest_ratio / rise;
             value = get_shape_value(config->rise_shape, x, 1);
         }
-        else if (half_phase < rise + hold)
+        else if (crest_ratio < rise + hold)
         {
             value = 1.0f;
         }
         else
         {
-            float x = (half_phase - rise - hold) / fall;
+            float x = (crest_ratio - rise - hold) / fall;
             value = get_shape_value(config->fall_shape, x, 0);
         }
     }
     else
     {
-        half_phase = (phase - 0.5f) * 2.0f;
+        const float trough_ratio = (phase-local_midpoint)/(1.0-local_midpoint);
 
-        if (half_phase < rise)
+        if (trough_ratio < rise)
         {
-            float x = half_phase / rise;
+            float x = trough_ratio / rise;
             value = -get_shape_value(config->rise_shape, x, 1);
         }
-        else if (half_phase < rise + hold)
+        else if (trough_ratio < rise + hold)
         {
             value = -1.0f;
         }
         else
         {
-            float x = (half_phase - rise - hold) / fall;
+            float x = (trough_ratio - rise - hold) / fall;
             value = -get_shape_value(config->fall_shape, x, 0);
         }
     }

@@ -13,6 +13,7 @@
 /* Waveform, volume oscillator, and master volume. */
 #define RISE_MUX_CH         0
 #define FALL_MUX_CH         1
+#define WAVE_MIDPOINT_CH    6
 #define VOSC_FREQUENCY_CH   9
 #define VOSC_STRENGTH_CH    10
 #define MASTER_VOLUME_CH    11
@@ -34,6 +35,7 @@ static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 
 static float s_smoothed_rise  = 0.5f;
 static float s_smoothed_fall  = 0.5f;
+static float s_wave_midpoint  = 0.5f;
 static float s_smoothed_vosc_frequency = 0.5f;
 static float s_smoothed_vosc_strength = 0.5f;
 static float s_smoothed_master_volume = 0.5f;
@@ -68,6 +70,10 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
     s_smoothed_master_volume = smooth_control(
         adc_value_to_ratio(mux_read(MASTER_VOLUME_CH)), s_smoothed_master_volume
     );
+    s_wave_midpoint = smooth_control(
+        adc_value_to_ratio(mux_read(WAVE_MIDPOINT_CH)), s_wave_midpoint
+    );
+    cfg->midpoint = s_wave_midpoint;
 
     vosc->frequency = (
         VOL_OSC_MIN_HZ

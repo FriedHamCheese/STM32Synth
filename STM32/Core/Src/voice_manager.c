@@ -134,7 +134,8 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
             phase = manager->voices[i].oscillator.waveform_completion_ratio;
 
             //Mixed as float amplitude, rounded once at the end
-            mixed_sample += adsr_apply_volume(waveform_get_point(phase, config), volume);
+            mixed_sample += adsr_apply_volume(
+                waveform_get_point(phase, config), volume);
 
             phase += manager->voices[i].oscillator.waveform_completion_increment;
 

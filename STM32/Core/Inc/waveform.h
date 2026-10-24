@@ -28,6 +28,7 @@ typedef struct
     WaveShape rise_shape;
     WaveShape fall_shape;
     float max_output;
+    float midpoint;
 } WaveformConfig;
 
 wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config);
