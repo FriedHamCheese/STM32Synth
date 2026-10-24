@@ -96,7 +96,6 @@ wavegen_output_t get_square_point(float phase, float max_output)
 
 wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
 {
-    const uint32_t dwt_parameter_start = DWT->CYCCNT;
     float rise;
     float fall;
     float hold;

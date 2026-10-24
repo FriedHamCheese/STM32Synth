@@ -9,29 +9,18 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 void test_volume_oscillation();
 void test_adsr();
+void test_waveform();
 
-int main(void){
-  sine_lookup_init();
-  const uint8_t run_test_suite = 0;
-  
-  if(run_test_suite){
-    printf("Unit tests using C asserts. All test passes if no assert message appears.\n");
-    printf("Testing synth_comms.h...\n");
-    test_process_keys();
-    test_volume_oscillation();
-    //test_oscillator();
-    test_adsr();
-    return 0;
-  }
-
-  //Loop to csv for visualisation
+static void write_waveform_csv(void)
+{
   FILE *csv = fopen("waveform.csv", "w");
   if (csv == NULL) {
     perror("waveform.csv");
-    return EXIT_FAILURE;
+    exit(EXIT_FAILURE);
   }
 
   WaveformConfig sine_waveform = {
@@ -54,10 +43,30 @@ int main(void){
 
   if (fclose(csv) != 0) {
     perror("waveform.csv");
-    return EXIT_FAILURE;
+    exit(EXIT_FAILURE);
   }
 
   printf("Wrote 12000 samples to waveform.csv\n");
-  
-  return 0;
+}
+
+int main(int argc, char **argv)
+{
+  sine_lookup_init();
+
+  if (argc > 1 && strcmp(argv[1], "waveform") == 0) {
+    write_waveform_csv();
+    return EXIT_SUCCESS;
+  }
+
+  if (argc > 1 && strcmp(argv[1], "comms") == 0) {
+    printf("Testing synth_comms.h...\n");
+    test_process_keys();
+    return EXIT_SUCCESS;
+  }
+
+  printf("Unit tests using C asserts. All test passes if no assert message appears.\n");
+  test_volume_oscillation();
+  test_waveform();
+  test_adsr();
+  return EXIT_SUCCESS;
 }
