@@ -16,6 +16,8 @@
 #define FALL_MUX_CH         1
 #define WAVE_MIDPOINT_CH    6
 #define METRONOME_BPM_CH    7
+#define METRONOME_TAP_PIN   GPIO_PIN_5 /* SW4 */
+#define TAP_POT_DEADBAND    0.03f
 #define VOSC_FREQUENCY_CH   9
 #define VOSC_STRENGTH_CH    10
 #define MASTER_VOLUME_CH    11
@@ -34,6 +36,9 @@ typedef struct {
 
 static DebouncedButton s_btn1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+static DebouncedButton s_tap_btn = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+static uint8_t s_tap_was_active = 0;
+static float s_tap_pot_ref = 0.5f;
 
 static float s_smoothed_rise  = 0.5f;
 static float s_smoothed_fall  = 0.5f;
@@ -82,29 +87,57 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
         s_wave_midpoint = 0.999f;
     cfg->midpoint = s_wave_midpoint;
 
-    s_smoothed_bpm = smooth_control(
-        adc_value_to_ratio(mux_read(METRONOME_BPM_CH)), s_smoothed_bpm
-    );
-    metronome_set_bpm(
-        metro,
-        METRONOME_MIN_BPM
-        + s_smoothed_bpm * (METRONOME_MAX_BPM - METRONOME_MIN_BPM)
-    );
+    const float bpm_pot = adc_value_to_ratio(mux_read(METRONOME_BPM_CH));
+    if (metro->tap_active) {
+        if (!s_tap_was_active)
+            s_tap_pot_ref = bpm_pot;
+        else if (fabsf(bpm_pot - s_tap_pot_ref) > TAP_POT_DEADBAND) {
+            metronome_tap_release(metro);
+            s_smoothed_bpm = bpm_pot;
+        }
+    } else {
+        s_smoothed_bpm = smooth_control(bpm_pot, s_smoothed_bpm);
+        metronome_set_bpm(
+            metro,
+            METRONOME_MIN_BPM
+            + s_smoothed_bpm * (METRONOME_MAX_BPM - METRONOME_MIN_BPM)
+        );
+    }
+    s_tap_was_active = metro->tap_active;
     /* SW6 is the former ADSR mode switch; active-low input with pull-up. */
     metronome_set_enabled(
         metro,
         HAL_GPIO_ReadPin(SW6_GPIO_Port, SW6_Pin) == GPIO_PIN_RESET
     );
 
-    vosc->frequency = (
-        VOL_OSC_MIN_HZ
-        + s_smoothed_vosc_frequency * (VOL_OSC_MAX_HZ - VOL_OSC_MIN_HZ)
-    );
+    vosc->frequency = metro->tap_active
+        ? vosc_beat_sync_hz(metronome_get_bpm(metro), s_smoothed_vosc_frequency)
+        : (VOL_OSC_MIN_HZ
+            + s_smoothed_vosc_frequency * (VOL_OSC_MAX_HZ - VOL_OSC_MIN_HZ));
     vosc->strength = s_smoothed_vosc_strength;
     *master_volume = ratio_to_master_volume(s_smoothed_master_volume);
 
     update_one_button(&s_btn1, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12), &cfg->rise_shape);
     update_one_button(&s_btn2, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_11), &cfg->fall_shape);
+}
+
+void controls_poll_tap(MetronomeParam *metro, VolumeOscillationParam *vosc)
+{
+    const uint32_t now = HAL_GetTick();
+    const GPIO_PinState raw = HAL_GPIO_ReadPin(GPIOB, METRONOME_TAP_PIN);
+
+    if (raw != s_tap_btn.raw_state) {
+        s_tap_btn.raw_state = raw;
+        s_tap_btn.changed_at = now;
+    }
+    if ((raw != s_tap_btn.stable_state) &&
+        ((now - s_tap_btn.changed_at) >= BUTTON_DEBOUNCE_MS)) {
+        s_tap_btn.stable_state = raw;
+        if (raw == GPIO_PIN_RESET &&
+            metronome_tap(metro, s_tap_btn.changed_at) &&
+            vosc != 0)
+            vosc->completion = 0.0f;
+    }
 }
 
 void controls_update_adsr(AdsrParam *adsr)

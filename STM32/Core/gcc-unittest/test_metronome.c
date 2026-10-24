@@ -87,16 +87,81 @@ static void test_bpm_clamp(void)
     MetronomeParam m;
     metronome_init(&m);
 
-    metronome_set_bpm(&m, 100.0f);
+    metronome_set_bpm(&m, 10.0f);
     assert(m.bpm == METRONOME_MIN_BPM);
-    assert(m.period_samples == 4000);
+    assert(m.period_samples == 18000);
 
-    metronome_set_bpm(&m, 300.0f);
+    metronome_set_bpm(&m, 400.0f);
     assert(m.bpm == METRONOME_MAX_BPM);
-    assert(m.period_samples == 3000);
+    assert(m.period_samples == 2400);
 
     metronome_set_bpm(&m, NAN);
     assert(m.bpm == METRONOME_MIN_BPM);
+}
+
+static void test_tap_sets_bpm(void)
+{
+    printf("\ttest_metronome_tap_sets_bpm()...\n");
+
+    MetronomeParam m;
+    metronome_init(&m);
+
+    assert(metronome_tap(&m, 0) == 0);   /* first tap only arms the sequence */
+    assert(metronome_tap(&m, 500) == 1);
+    assert(fabsf(m.bpm - 120.0f) < 0.5f);
+    assert(m.period_samples == 6000);
+    assert(m.tap_active == 1);
+
+    /* the four-interval average stays at 120 BPM */
+    assert(metronome_tap(&m, 1000) == 1);
+    assert(metronome_tap(&m, 1500) == 1);
+    assert(metronome_tap(&m, 2000) == 1);
+    assert(fabsf(m.bpm - 120.0f) < 0.5f);
+}
+
+static void test_tap_timeout_and_release(void)
+{
+    printf("\ttest_metronome_tap_timeout_and_release()...\n");
+
+    MetronomeParam m;
+    metronome_init(&m);
+
+    assert(metronome_tap(&m, 0) == 0);
+    assert(metronome_tap(&m, 100) == 0);  /* bounce ignored */
+    assert(metronome_tap(&m, 500) == 1);
+    assert(fabsf(m.bpm - 120.0f) < 0.5f);
+
+    /* gap beyond the timeout restarts the sequence: this tap only arms it */
+    assert(metronome_tap(&m, 3000) == 0);
+    assert(metronome_tap(&m, 3500) == 1);
+    assert(fabsf(m.bpm - 120.0f) < 0.5f);
+
+    metronome_tap_release(&m);
+    assert(m.tap_active == 0);
+    assert(metronome_tap(&m, 5000) == 0);
+    assert(m.tap_active == 1);
+}
+
+static void test_tap_resyncs_beat(void)
+{
+    printf("\ttest_metronome_tap_resyncs_beat()...\n");
+
+    MetronomeParam m;
+    metronome_init(&m);
+    metronome_set_enabled(&m, 1);
+    metronome_set_bpm(&m, 300.0f);
+
+    for (unsigned i = 0; i < 50; i++)
+        metronome_get_sample(&m);
+    assert(m.samples_to_beat != 0);
+
+    metronome_tap(&m, 0);
+    metronome_tap(&m, 500);
+
+    assert(m.samples_to_beat == 0);
+    assert(m.sample_index == 0);
+    metronome_get_sample(&m);
+    assert(m.sample_index == 1);  /* click restarted on the tap */
 }
 
 static void test_enable_resets_state(void)
@@ -138,6 +203,9 @@ void test_metronome(void)
     test_beat_intervals();
     test_click_length();
     test_bpm_clamp();
+    test_tap_sets_bpm();
+    test_tap_timeout_and_release();
+    test_tap_resyncs_beat();
     test_enable_resets_state();
     test_null_safe();
 }

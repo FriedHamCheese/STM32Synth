@@ -46,6 +46,11 @@ typedef struct {
     float lfo_depth;            /* strength 0.0 .. 1.0                       */
     float lfo_hz;               /* 0.1 .. 100 Hz                             */
 
+    /* ---- tempo -------------------------------------------------------- */
+    bool  bpm_valid;            /* false -> "--"                             */
+    float bpm;
+    const char *lfo_division;   /* "1/8" etc while tempo-synced, else NULL   */
+
     /* ---- output: 0.0 .. 10.0 x, above 1.0 = overdrive ---------------- */
     bool  volume_valid;
     float volume;

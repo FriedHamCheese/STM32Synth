@@ -126,6 +126,7 @@ void main_runtime_iter(void)
   uint32_t now = HAL_GetTick();
 
   #ifdef IS_MASTER
+  controls_poll_tap(&metronome, &volume_oscillator_param);
   if(now - last_controls_poll >= 20){
 	  controls_update(&waveform_config, &volume_oscillator_param, &master_volume, &metronome);
   	  controls_update_adsr(&adsr_param);
@@ -411,7 +412,13 @@ static void update_ui_data(void)
   
   ui_data.lfo_depth = volume_oscillator_param.strength;
   ui_data.lfo_hz = volume_oscillator_param.frequency;
-  
+
+  ui_data.bpm_valid = true;
+  ui_data.bpm = metronome_get_bpm(&metronome);
+  ui_data.lfo_division = metronome.tap_active
+      ? vosc_beat_division_label(ui_data.bpm, volume_oscillator_param.frequency)
+      : NULL;
+
   ui_data.volume_valid = true;
   ui_data.volume = master_volume;
 
