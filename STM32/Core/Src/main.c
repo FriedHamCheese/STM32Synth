@@ -417,8 +417,8 @@ static void update_ui_data(void)
   else
     ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index];
 
-  ui_data.wave_center_osc_valid = true;
-  ui_data.wave_center_osc_hz = 0.0;
+  ui_data.wave_center_pwm_valid = true;
+  ui_data.wave_center_pwm_pct = waveform_config.midpoint * 100.0f;
     
   ui_data.filter_valid = false;  
 }

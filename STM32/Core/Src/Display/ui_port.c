@@ -82,8 +82,8 @@ void ui_demo_update(ui_data_t *d)
 
     d->autoplay_label = demo_songs[(t / 4000) % 3];
 
-    d->wave_center_osc_valid = true;
-    d->wave_center_osc_hz    = (t % 9000 < 3000) ? 0.0f : 20.0f * tri(t, 9000);
+    d->wave_center_pwm_valid = true;
+    d->wave_center_pwm_pct   = 100.0f * tri(t, 9000);
 
     /* filter: cycles LPF -> HPF -> off, strength ADSR -> fixed */
     d->filter_valid = true;

@@ -56,9 +56,9 @@ typedef struct {
      * Must point to memory that stays valid (e.g. the song list labels). */
     const char *autoplay_label;
 
-    /* Wave centre oscillator: 0.0 = off, up to 20 Hz */
-    bool  wave_center_osc_valid;
-    float wave_center_osc_hz;
+    /* User-set PWM midpoint: 0 .. 100 percent */
+    bool  wave_center_pwm_valid;
+    float wave_center_pwm_pct;
 
     /* Filter. LPF and HPF share one knob: at most one is non-zero,
      * 0 = off (if both are non-zero the screen shows the LPF).

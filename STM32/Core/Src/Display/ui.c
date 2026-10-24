@@ -351,7 +351,7 @@ static void paint_info(gfx_canvas_t *c, void *ctx)
     draw_inline(c, INFO_X + 6, y, "RISE", &v, CELL_VALUE);
     strcpy(v.num, info_v.fall);
     draw_inline(c, INFO_X + INFO_FALL_X, y, "FALL", &v, CELL_VALUE);
-    draw_inline(c, INFO_X + INFO_OSC_X, y, "CTR OSC", &info_v.osc, info_v.osc_state);
+    draw_inline(c, INFO_X + INFO_OSC_X, y, "PWM", &info_v.osc, info_v.osc_state);
 }
 
 static void update_info(void)
@@ -359,9 +359,13 @@ static void update_info(void)
     memset(&info_v, 0, sizeof info_v);
     put_uint(info_v.rise, (uint32_t)clampf(g_data.rise_pct + 0.5f, 0, 100));
     put_uint(info_v.fall, (uint32_t)clampf(g_data.fall_pct + 0.5f, 0, 100));
-    if (!g_data.wave_center_osc_valid)          info_v.osc_state = CELL_NA;
-    else if (g_data.wave_center_osc_hz <= 0.0f) info_v.osc_state = CELL_OFF;
-    else { info_v.osc_state = CELL_VALUE; fmt_freq(&info_v.osc, g_data.wave_center_osc_hz); }
+    if (!g_data.wave_center_pwm_valid) info_v.osc_state = CELL_NA;
+    else {
+        info_v.osc_state = CELL_VALUE;
+        put_uint(info_v.osc.num, (uint32_t)clampf(
+            g_data.wave_center_pwm_pct + 0.5f, 0, 100));
+        strcpy(info_v.osc.unit, "%");
+    }
 
     uint32_t h = hash_bytes(&info_v, sizeof info_v);
     if (g_force || h != info_hash) {
