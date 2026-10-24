@@ -33,8 +33,4 @@ typedef struct
 
 wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config);
 
-wavegen_output_t get_sine_point(float phase, float max_output);
-wavegen_output_t get_triangle_point(float phase, float max_output);
-wavegen_output_t get_square_point(float phase, float max_output);
-
 #endif

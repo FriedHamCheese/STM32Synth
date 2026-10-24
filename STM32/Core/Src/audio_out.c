@@ -4,12 +4,10 @@
 #include "volume_oscillation.h"
 #include "main.h"
 
-extern void periodic_loop(void);
-
-VoiceManager    *s_vm  = 0;
-WaveformConfig  *s_cfg = 0;
-VolumeOscillationParam *s_vosc = 0;
-float* s_mvol = 0;
+static VoiceManager    *s_vm  = 0;
+static WaveformConfig  *s_cfg = 0;
+static VolumeOscillationParam *s_vosc = 0;
+static float* s_mvol = 0;
 
 /* ponytail: file-scope pointers set once at init; safe because single-core M4 */
 void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume)
@@ -28,7 +26,7 @@ inline void set_audio_output_value(wavegen_output_t left, wavegen_output_t right
     TIM2->CCR2 = left;
 }
 
-/* 48kHz ISR — called from TIM4 overflow */
+/* 12kHz ISR — called from TIM4 overflow */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM3) {
@@ -36,15 +34,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         return;
     }
 
-    if (htim->Instance != TIM4 || !s_vm || !s_cfg || !s_vosc)
+    if (htim->Instance != TIM4 || !s_vm || !s_cfg || !s_vosc || !s_mvol)
         return;
 
     /* ponytail: still using waveform_get_point stub; swap for voice_manager_get_sample
        once Mind wires VoiceManager into the audio path */
     const float volume = get_output_amplitude_multiplier(s_vosc) * (*s_mvol);
-    const float sample_midpoint = 175.0f;
-    const float amplitude = (float)voice_manager_get_sample(s_vm, s_cfg) - sample_midpoint;
-    const float sample = (amplitude * volume) + sample_midpoint;
+    const float amplitude = (float)voice_manager_get_sample(s_vm, s_cfg) - WAVEGEN_OUTPUT_GROUND;
+    const float sample = (amplitude * volume) + WAVEGEN_OUTPUT_GROUND;
     set_audio_output_value(sample, sample);
     
     get_oscillation_completion(s_vosc, AUDIO_SAMPLE_PERIOD);

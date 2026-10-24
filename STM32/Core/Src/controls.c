@@ -73,6 +73,10 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
     s_wave_midpoint = smooth_control(
         adc_value_to_ratio(mux_read(WAVE_MIDPOINT_CH)), s_wave_midpoint
     );
+    if (s_wave_midpoint < 0.001f)
+        s_wave_midpoint = 0.001f;
+    if (s_wave_midpoint > 0.999f)
+        s_wave_midpoint = 0.999f;
     cfg->midpoint = s_wave_midpoint;
 
     vosc->frequency = (

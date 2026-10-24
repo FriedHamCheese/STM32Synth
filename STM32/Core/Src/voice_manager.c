@@ -5,7 +5,7 @@
 #define OUTPUT_MIN 0.0f
 #define OUTPUT_MAX 350.0f
 
-//note_on/note_off run in the main loop while get_sample runs in the 48kHz TIM4 ISR,
+//note_on/note_off run in the main loop while get_sample runs in the 12kHz TIM4 ISR,
 //block the ISR while a voice is being changed so it never sees a half-written voice.
 #ifdef PC_UNITTEST
 #define VOICE_LOCK()
@@ -138,9 +138,7 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
                 waveform_get_point(phase, config), volume);
 
             phase += manager->voices[i].oscillator.waveform_completion_increment;
-
-            if (phase >= 1.0f)
-                phase -= 1.0f;
+            phase -= (float)(uint32_t)phase;
 
             manager->voices[i].oscillator.waveform_completion_ratio = phase;
 
