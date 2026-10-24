@@ -39,6 +39,28 @@ static inline float audio_mix_sample(
     return mixed;
 }
 
+/*
+ * One-pole DC blocker on the centered sample. Midpoint/rise/fall changes
+ * shift the waveform mean by up to ~112 PWM counts; summing voices would
+ * otherwise put that offset on the speaker. Cutoff ~9.5 Hz at 12 kHz.
+ */
+#define AUDIO_DC_BLOCK_R 0.995f
+
+typedef struct {
+    float previous_input;
+    float previous_output;
+} AudioDcBlockState;
+
+static inline float audio_dc_block(AudioDcBlockState *state, float centered)
+{
+    const float output = centered
+        - state->previous_input
+        + AUDIO_DC_BLOCK_R * state->previous_output;
+    state->previous_input = centered;
+    state->previous_output = output;
+    return output;
+}
+
 void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume, MetronomeParam *metro);
 void set_audio_output_value(uint16_t left, uint16_t right);
 

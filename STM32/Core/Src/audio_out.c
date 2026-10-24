@@ -9,6 +9,7 @@ static WaveformConfig  *s_cfg = 0;
 static VolumeOscillationParam *s_vosc = 0;
 static float* s_mvol = 0;
 static MetronomeParam *s_metro = 0;
+static AudioDcBlockState s_dc_block = { 0.0f, 0.0f };
 
 /* ponytail: file-scope pointers set once at init; safe because single-core M4 */
 void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume, MetronomeParam *metro)
@@ -44,9 +45,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     const float lfo_multiplier = get_output_amplitude_multiplier(s_vosc);
     const float voice_sample = (float)voice_manager_get_sample(s_vm, s_cfg);
     const float click = (float)metronome_get_sample(s_metro);
-    const float sample = audio_mix_sample(
+    const float mixed = audio_mix_sample(
         voice_sample, click, *s_mvol, lfo_multiplier
     );
+    const float centered = audio_dc_block(
+        &s_dc_block, mixed - WAVEGEN_OUTPUT_GROUND
+    );
+    float sample = centered + WAVEGEN_OUTPUT_GROUND;
+
+    if (sample < AUDIO_OUTPUT_MIN)
+        sample = AUDIO_OUTPUT_MIN;
+    if (sample > AUDIO_OUTPUT_MAX)
+        sample = AUDIO_OUTPUT_MAX;
 
     set_audio_output_value((wavegen_output_t)sample, (wavegen_output_t)sample);
     
