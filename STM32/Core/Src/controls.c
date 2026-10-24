@@ -3,6 +3,7 @@
 #include "volume_oscillation.h"
 #include "audio_out.h"
 #include "audparam_ranges.h"
+#include "main.h"
 #include "stm32f4xx_hal.h"
 
 #include <math.h>
@@ -14,6 +15,7 @@
 #define RISE_MUX_CH         0
 #define FALL_MUX_CH         1
 #define WAVE_MIDPOINT_CH    6
+#define METRONOME_BPM_CH    7
 #define VOSC_FREQUENCY_CH   9
 #define VOSC_STRENGTH_CH    10
 #define MASTER_VOLUME_CH    11
@@ -36,6 +38,7 @@ static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static float s_smoothed_rise  = 0.5f;
 static float s_smoothed_fall  = 0.5f;
 static float s_wave_midpoint  = 0.5f;
+static float s_smoothed_bpm   = 0.5f;
 static float s_smoothed_vosc_frequency = 0.5f;
 static float s_smoothed_vosc_strength = 0.5f;
 static float s_smoothed_master_volume = 0.5f;
@@ -54,7 +57,7 @@ static uint32_t pot_to_ms(float pot, float max_ms);
 
 void controls_init(void) { /* mux and GPIO already inited by CubeMX */ }
 
-void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *master_volume)
+void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *master_volume, MetronomeParam *metro)
 {
     s_smoothed_rise = smooth_control(adc_value_to_ratio(mux_read(RISE_MUX_CH)), s_smoothed_rise);
     s_smoothed_fall = smooth_control(adc_value_to_ratio(mux_read(FALL_MUX_CH)), s_smoothed_fall);
@@ -78,6 +81,20 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
     if (s_wave_midpoint > 0.999f)
         s_wave_midpoint = 0.999f;
     cfg->midpoint = s_wave_midpoint;
+
+    s_smoothed_bpm = smooth_control(
+        adc_value_to_ratio(mux_read(METRONOME_BPM_CH)), s_smoothed_bpm
+    );
+    metronome_set_bpm(
+        metro,
+        METRONOME_MIN_BPM
+        + s_smoothed_bpm * (METRONOME_MAX_BPM - METRONOME_MIN_BPM)
+    );
+    /* SW6 is the former ADSR mode switch; active-low input with pull-up. */
+    metronome_set_enabled(
+        metro,
+        HAL_GPIO_ReadPin(SW6_GPIO_Port, SW6_Pin) == GPIO_PIN_RESET
+    );
 
     vosc->frequency = (
         VOL_OSC_MIN_HZ

@@ -4,18 +4,24 @@
 #include "volume_oscillation.h"
 #include "main.h"
 
+/* TIM2 PWM period; keep the mixed sample inside the compare range. */
+#define AUDIO_OUTPUT_MIN 0.0f
+#define AUDIO_OUTPUT_MAX 350.0f
+
 static VoiceManager    *s_vm  = 0;
 static WaveformConfig  *s_cfg = 0;
 static VolumeOscillationParam *s_vosc = 0;
 static float* s_mvol = 0;
+static MetronomeParam *s_metro = 0;
 
 /* ponytail: file-scope pointers set once at init; safe because single-core M4 */
-void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume)
+void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume, MetronomeParam *metro)
 {
     s_vm  = vm;
     s_cfg = cfg;
     s_vosc = voscp;
     s_mvol = master_volume;
+    s_metro = metro;
 }
 
 //Function for readability, used only here, O1+ will probably inline this, but just to make it clear
@@ -34,15 +40,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         return;
     }
 
-    if (htim->Instance != TIM4 || !s_vm || !s_cfg || !s_vosc || !s_mvol)
+    if (htim->Instance != TIM4 || !s_vm || !s_cfg || !s_vosc || !s_mvol || !s_metro)
         return;
 
     /* ponytail: still using waveform_get_point stub; swap for voice_manager_get_sample
        once Mind wires VoiceManager into the audio path */
     const float volume = get_output_amplitude_multiplier(s_vosc) * (*s_mvol);
-    const float amplitude = (float)voice_manager_get_sample(s_vm, s_cfg) - WAVEGEN_OUTPUT_GROUND;
-    const float sample = (amplitude * volume) + WAVEGEN_OUTPUT_GROUND;
-    set_audio_output_value(sample, sample);
+    const float click = (float)metronome_get_sample(s_metro);
+    float sample = (
+        (float)voice_manager_get_sample(s_vm, s_cfg)
+        - WAVEGEN_OUTPUT_GROUND
+        + click
+    ) * volume + WAVEGEN_OUTPUT_GROUND;
+
+    if (sample < AUDIO_OUTPUT_MIN)
+        sample = AUDIO_OUTPUT_MIN;
+    if (sample > AUDIO_OUTPUT_MAX)
+        sample = AUDIO_OUTPUT_MAX;
+
+    set_audio_output_value((wavegen_output_t)sample, (wavegen_output_t)sample);
     
     get_oscillation_completion(s_vosc, AUDIO_SAMPLE_PERIOD);
 }

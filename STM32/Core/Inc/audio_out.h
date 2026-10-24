@@ -4,12 +4,13 @@
 #include "waveform.h"
 #include "voice_manager.h"
 #include "volume_oscillation.h"
+#include "metronome.h"
 
 #define AUDIO_SAMPLE_RATE_HZ 12000.0f
 //Avoid 14-cycle float division instructions later on, use 1-3 cycle multiplication
 #define AUDIO_SAMPLE_PERIOD 1.0f/AUDIO_SAMPLE_RATE_HZ
 
-void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume);
+void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume, MetronomeParam *metro);
 void set_audio_output_value(uint16_t left, uint16_t right);
 
 /* HAL_TIM_PeriodElapsedCallback defined in audio_out.c */
