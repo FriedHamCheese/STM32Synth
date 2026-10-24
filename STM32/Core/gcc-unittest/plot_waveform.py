@@ -27,6 +27,7 @@ def read_waveform(csv_path: Path) -> tuple[list[int], list[int]]:
 
 def plot_ascii(outputs: list[float], width: int = 100, height: int = 20) -> None:
     """Print min/max envelope bars; no matplotlib needed."""
+    height = max(2, height)
     if len(outputs) > width:
         bucket = len(outputs) / width
         lows: list[float] = []

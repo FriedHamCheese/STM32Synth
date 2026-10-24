@@ -1,5 +1,16 @@
 #include "metronome.h"
+#include "audio_out.h"
 #include "metronome_click.h"
+
+_Static_assert(
+    METRONOME_SAMPLE_RATE_HZ == (unsigned)AUDIO_SAMPLE_RATE_HZ,
+    "metronome sample rate must match the audio ISR"
+);
+
+_Static_assert(
+    METRONOME_CLICK_SAMPLES < (720000U / 240U),
+    "click must be shorter than the fastest beat interval"
+);
 
 _Static_assert(
     sizeof(metronome_click) / sizeof(metronome_click[0])
@@ -40,12 +51,13 @@ void metronome_set_enabled(MetronomeParam *m, uint8_t enabled)
         return;
 
     const uint8_t was_enabled = m->enabled;
-    m->enabled = enabled ? 1U : 0U;
 
-    if (m->enabled && !was_enabled) {
+    if (enabled && !was_enabled) {
         m->sample_index = 0;
         m->samples_to_beat = 0;
     }
+
+    m->enabled = enabled ? 1U : 0U;
 }
 
 int8_t metronome_get_sample(MetronomeParam *m)

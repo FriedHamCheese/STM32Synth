@@ -6,6 +6,7 @@ STM32/.mxproject
 kicad/.history/
 STM32/.mxproject
 STM32/Core/gcc-unittest/test_main.exe
+STM32/Core/gcc-unittest/test_main
 STM32/Core/gcc-unittest/waveform.csv
 STM32/Core/gcc-unittest/metronome.csv
 STM32/Core/gcc-unittest/*.png

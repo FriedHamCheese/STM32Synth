@@ -16,6 +16,7 @@ void test_volume_oscillation();
 void test_adsr();
 void test_waveform();
 void test_metronome();
+void test_audio_mix();
 
 static void write_waveform_csv(void)
 {
@@ -101,6 +102,7 @@ int main(int argc, char **argv)
   test_volume_oscillation();
   test_waveform();
   test_metronome();
+  test_audio_mix();
   test_adsr();
   return EXIT_SUCCESS;
 }

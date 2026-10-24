@@ -14,7 +14,7 @@ typedef struct {
     volatile uint8_t enabled;
     volatile uint16_t period_samples;
     volatile uint16_t samples_to_beat;
-    uint16_t sample_index;
+    volatile uint16_t sample_index;
 } MetronomeParam;
 
 void metronome_init(MetronomeParam *m);

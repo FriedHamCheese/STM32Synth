@@ -4,19 +4,26 @@
 #include <math.h>
 #include <stdio.h>
 
-static unsigned count_beats(MetronomeParam *m, unsigned samples)
-{
-    unsigned beats = 0;
+static void assert_beat_onsets(
+    MetronomeParam *m,
+    unsigned samples,
+    const unsigned *expected,
+    unsigned expected_count
+) {
+    unsigned found = 0;
     uint16_t previous_index = 0;
 
     for (unsigned i = 0; i < samples; i++) {
         metronome_get_sample(m);
-        if (previous_index == 0 && m->sample_index != 0)
-            beats++;
+        if (previous_index == 0 && m->sample_index != 0) {
+            assert(found < expected_count);
+            assert(i == expected[found]);
+            found++;
+        }
         previous_index = m->sample_index;
     }
 
-    return beats;
+    assert(found == expected_count);
 }
 
 static void test_disabled_is_silent(void)
@@ -40,13 +47,21 @@ static void test_beat_intervals(void)
 
     metronome_set_bpm(&m, 240.0f);
     assert(m.period_samples == 3000);
-    assert(count_beats(&m, METRONOME_SAMPLE_RATE_HZ) == 4);
+    const unsigned fast_onsets[] = { 0, 3000, 6000, 9000 };
+    assert_beat_onsets(
+        &m, METRONOME_SAMPLE_RATE_HZ,
+        fast_onsets, sizeof(fast_onsets)/sizeof(fast_onsets[0])
+    );
 
     metronome_init(&m);
     metronome_set_enabled(&m, 1);
     metronome_set_bpm(&m, 180.0f);
     assert(m.period_samples == 4000);
-    assert(count_beats(&m, METRONOME_SAMPLE_RATE_HZ) == 3);
+    const unsigned slow_onsets[] = { 0, 4000, 8000 };
+    assert_beat_onsets(
+        &m, METRONOME_SAMPLE_RATE_HZ,
+        slow_onsets, sizeof(slow_onsets)/sizeof(slow_onsets[0])
+    );
 }
 
 static void test_click_length(void)
