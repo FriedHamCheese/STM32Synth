@@ -62,6 +62,7 @@ static inline float audio_dc_block(AudioDcBlockState *state, float centered)
 }
 
 void audio_out_init(VoiceManager *vm, WaveformConfig *cfg, VolumeOscillationParam *voscp, float *master_volume, MetronomeParam *metro);
+void audio_out_tick(void);
 void set_audio_output_value(uint16_t left, uint16_t right);
 
 /* HAL_TIM_PeriodElapsedCallback defined in audio_out.c */
