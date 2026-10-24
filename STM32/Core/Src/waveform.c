@@ -1,5 +1,8 @@
 #include "waveform.h"
 #include "sine_lookup.h"
+#ifndef PC_UNITTEST
+#include "stm32f4xx_hal.h"
+#endif
 #include <math.h>
 
 __attribute__((always_inline))
@@ -9,7 +12,7 @@ static inline float sin_quarter_circle(float wave_completion){
 
 static float get_shape_value(WaveShape shape, float x, int rising)
 {
-    x = clamp01(x);
+    //x = clamp01(x); -15 cycles
 
     switch (shape)
     {
@@ -93,22 +96,30 @@ wavegen_output_t get_square_point(float phase, float max_output)
 
 wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
 {
+    const uint32_t dwt_parameter_start = DWT->CYCCNT;
     float rise;
     float fall;
     float hold;
     float total;
     float value;
 
+	/*
+	 * -20 cycles
     if (config == NULL ||
         !isfinite(phase) ||
         !isfinite(config->max_output) ||
         config->max_output <= 0.0f)
         return 0.0f;
+	*/
+    if (config->max_output <= 0.0f)
+        return 0.0f;
 
-    phase -= floorf(phase);
+    //phase -= floorf(phase); -20 cycles
 
-    rise = clamp01(config->rise_pct);
-    fall = clamp01(config->fall_pct);
+    //rise = clamp01(config->rise_pct); -12 cycles
+    //fall = clamp01(config->fall_pct); -12 cycles
+    rise = config->rise_pct;
+    fall = config->fall_pct;
 
     if (rise < 0.001f)
         rise = 0.001f;
@@ -130,7 +141,6 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
     }
 
     hold = 1.0f - rise - fall;
-
     if (phase < local_midpoint)
     {
         const float crest_ratio = phase/local_midpoint;
@@ -152,7 +162,7 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
     }
     else
     {
-        const float trough_ratio = (phase-local_midpoint)/(1.0-local_midpoint);
+        const float trough_ratio = (phase-local_midpoint)/(1.0f-local_midpoint);
 
         if (trough_ratio < rise)
         {
@@ -169,7 +179,6 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
             value = -get_shape_value(config->fall_shape, x, 0);
         }
     }
-
     value = (value + 1.0f) * 0.5f;
 
     return (wavegen_output_t)(value * config->max_output);
