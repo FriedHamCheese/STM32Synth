@@ -28,26 +28,18 @@ static float get_shape_value(WaveShape shape, float x, int rising)
     }
 }
 
-/*
- * Fast path. Preconditions guaranteed by callers:
- *  - phase is finite and in [0,1)
- *  - config is non-NULL; max_output > 0; midpoint is in (0,1)
- * controls_update() clamps pot-derived values; voice_manager_get_sample()
- * wraps phase before calling this function.
- */
-wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
+void waveform_prepare(const WaveformConfig *config, WaveformPrepared *prepared)
 {
-    float rise;
-    float fall;
-    float hold;
-    float total;
-    float value;
+    if (prepared == 0)
+        return;
+
+    prepared->valid = 0;
 
     if (config == NULL || config->max_output <= 0.0f)
-        return 0.0f;
+        return;
 
-    rise = config->rise_pct;
-    fall = config->fall_pct;
+    float rise = config->rise_pct;
+    float fall = config->fall_pct;
 
     if (rise < 0.001f)
         rise = 0.001f;
@@ -55,59 +47,90 @@ wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
     if (fall < 0.001f)
         fall = 0.001f;
 
-    total = rise + fall;
-
+    const float total = rise + fall;
     if (total > 1.0f)
     {
         rise /= total;
         fall /= total;
     }
-    
-    float local_midpoint = config->midpoint;
-    if(local_midpoint <= 0.0f){
-      local_midpoint = 0.001f;
-    }
 
-    hold = 1.0f - rise - fall;
-    if (phase < local_midpoint)
+    float midpoint = config->midpoint;
+    if (midpoint <= 0.0f)
+        midpoint = 0.001f;
+    if (midpoint >= 1.0f)
+        midpoint = 0.999f;
+
+    prepared->midpoint = midpoint;
+    prepared->rise = rise;
+    prepared->fall = fall;
+    prepared->fall_start = 1.0f - fall;
+    prepared->inv_midpoint = 1.0f / midpoint;
+    prepared->inv_trough_span = 1.0f / (1.0f - midpoint);
+    prepared->inv_rise = 1.0f / rise;
+    prepared->inv_fall = 1.0f / fall;
+    prepared->valid = 1;
+}
+
+wavegen_output_t waveform_get_point_prepared(
+    float phase,
+    const WaveformConfig *config,
+    const WaveformPrepared *prepared
+) {
+    if (prepared == 0 || !prepared->valid)
+        return 0.0f;
+
+    float value;
+
+    if (phase < prepared->midpoint)
     {
-        const float crest_ratio = phase/local_midpoint;
+        const float crest_ratio = phase * prepared->inv_midpoint;
 
-        if (crest_ratio < rise)
+        if (crest_ratio < prepared->rise)
         {
-            float x = crest_ratio / rise;
+            const float x = crest_ratio * prepared->inv_rise;
             value = get_shape_value(config->rise_shape, x, 1);
         }
-        else if (crest_ratio < rise + hold)
+        else if (crest_ratio < prepared->fall_start)
         {
             value = 1.0f;
         }
         else
         {
-            float x = (crest_ratio - rise - hold) / fall;
+            const float x = (crest_ratio - prepared->fall_start)
+                * prepared->inv_fall;
             value = get_shape_value(config->fall_shape, x, 0);
         }
     }
     else
     {
-        const float trough_ratio = (phase-local_midpoint)/(1.0f-local_midpoint);
+        const float trough_ratio = (phase - prepared->midpoint)
+            * prepared->inv_trough_span;
 
-        if (trough_ratio < rise)
+        if (trough_ratio < prepared->rise)
         {
-            float x = trough_ratio / rise;
+            const float x = trough_ratio * prepared->inv_rise;
             value = -get_shape_value(config->rise_shape, x, 1);
         }
-        else if (trough_ratio < rise + hold)
+        else if (trough_ratio < prepared->fall_start)
         {
             value = -1.0f;
         }
         else
         {
-            float x = (trough_ratio - rise - hold) / fall;
+            const float x = (trough_ratio - prepared->fall_start)
+                * prepared->inv_fall;
             value = -get_shape_value(config->fall_shape, x, 0);
         }
     }
+
     value = (value + 1.0f) * 0.5f;
 
     return (wavegen_output_t)(value * config->max_output);
+}
+
+wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config)
+{
+    WaveformPrepared prepared;
+    waveform_prepare(config, &prepared);
+    return waveform_get_point_prepared(phase, config, &prepared);
 }

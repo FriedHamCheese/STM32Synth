@@ -119,6 +119,9 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
     if (manager == 0 || config == 0)
         return (wavegen_output_t)OUTPUT_MIDPOINT;
 
+    WaveformPrepared prepared;
+    waveform_prepare(config, &prepared);
+
     for (int i = 0; i < MAX_VOICES; i++)
     {
         if (manager->voices[i].active)
@@ -135,7 +138,7 @@ wavegen_output_t voice_manager_get_sample(VoiceManager *manager, const WaveformC
 
             //Mixed as float amplitude, rounded once at the end
             mixed_sample += adsr_apply_volume(
-                waveform_get_point(phase, config), volume);
+                waveform_get_point_prepared(phase, config, &prepared), volume);
 
             phase += manager->voices[i].oscillator.waveform_completion_increment;
             phase -= (float)(uint32_t)phase;
