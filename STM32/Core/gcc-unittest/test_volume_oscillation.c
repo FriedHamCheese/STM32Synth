@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 
 #define VOL_OSC_TEST_POINTS 8
@@ -63,10 +64,32 @@ static void test_volume_oscillation_max_strength(){
   test_volume_oscillation_strength(1.0f, expected);
 }
 
+static void test_volume_oscillation_beat_sync_divisions(){
+  printf("\ttest_volume_oscillation_beat_sync_divisions()...\n");
+  /* 120 BPM = 2 beats/s; pot 0..1 walks 1/16 .. 4 cycles per beat */
+  assert(float_within_tolerance(
+    vosc_beat_sync_hz(120.0f, 0.0f), 0.125f, VOL_OSC_FLOAT_TEST_TOLERANCE));
+  assert(float_within_tolerance(
+    vosc_beat_sync_hz(120.0f, 0.5f), 1.0f, VOL_OSC_FLOAT_TEST_TOLERANCE));
+  assert(float_within_tolerance(
+    vosc_beat_sync_hz(120.0f, 1.0f), 8.0f, VOL_OSC_FLOAT_TEST_TOLERANCE));
+  assert(vosc_beat_sync_hz(0.0f, 0.5f) == 0.0f);
+}
+
+static void test_beat_division_label(){
+  printf("\ttest_volume_oscillation_beat_division_label()...\n");
+  assert(strcmp(vosc_beat_division_label(120.0f, 1.0f), "1/2") == 0);
+  assert(strcmp(vosc_beat_division_label(120.0f, 2.0f), "1") == 0);
+  assert(strcmp(vosc_beat_division_label(120.0f, 8.0f), "4") == 0);
+  assert(vosc_beat_division_label(0.0f, 1.0f) == NULL);
+}
+
 void test_volume_oscillation(){
   printf("test_volume_oscillation()\n");
   test_volume_oscillation_no_strength();
   test_volume_oscillation_quarter_strength();
   test_volume_oscillation_half_strength();
   test_volume_oscillation_max_strength();
+  test_volume_oscillation_beat_sync_divisions();
+  test_beat_division_label();
 }

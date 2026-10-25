@@ -20,6 +20,7 @@
 #define MAX_SLAVES        6
 #define SLAVE_SLOTS       (MAX_SLAVES + 1) /* IDs are 1-based; slot 0 unused */
 #define SLAVE_FAIL_LIMIT  5
+#define DMA_FREEZE_TIMEOUT_MS  50U
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
 #define I2C_TIMEOUT_MS    1
 #define PRESS_THRESHOLD   -300    /* signed ADC delta from baseline — tune per H3503 */
@@ -86,9 +87,11 @@ void note_off(uint8_t slave, uint8_t key);
 #ifndef IS_MASTER
 
 extern volatile KeyFrame g_keyframe;
+extern volatile uint32_t g_last_dma_complete_ms;
 
 uint8_t read_slave_id_from_dip(void);
 void init_slave(uint8_t slave_id); /* configure I2C slave address */
+void request_slave_id_change(uint8_t slave_id);
 void update_keyframe(void);  /* scan all 12 mux channels into g_keyframe */
 
 #ifndef PC_UNITTEST

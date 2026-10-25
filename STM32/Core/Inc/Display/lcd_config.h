@@ -28,8 +28,6 @@
 #ifndef LCD_CONFIG_H
 #define LCD_CONFIG_H
 
-#include "main.h"
-
 /* ---- controller -------------------------------------------------------- */
 #define LCD_CTRL_ILI9341   1
 #define LCD_CTRL_ST7789V   2
@@ -44,16 +42,18 @@
 
 /*
  * MADCTL (0x36) value = rotation + colour order. Common landscape values:
- *   ILI9341 : 0x28 (MV|BGR)        upside down: 0xE8 (MY|MX|MV|BGR)
- *   ST7789V : 0x60 (MX|MV, RGB)    upside down: 0xA0 (MY|MV, RGB)
+ *   ILI9341 : 0xE8 (MY|MX|MV|BGR)  other way up: 0x28 (MV|BGR)
+ *   ST7789V : 0xA0 (MY|MV, RGB)    other way up: 0x60 (MX|MV, RGB)
+ * Defaults below are the 0xE8 / 0xA0 orientation: the first build (0x28)
+ * came out 180 deg off on the real board.
  * Bits: 0x80 MY, 0x40 MX, 0x20 MV(swap XY), 0x08 BGR.
  * If the image is mirrored, toggle MX (0x40) or MY (0x80).
  */
 #ifndef LCD_MADCTL
 #  if LCD_CONTROLLER == LCD_CTRL_ILI9341
-#    define LCD_MADCTL     0x28
+#    define LCD_MADCTL     0xE8
 #  else
-#    define LCD_MADCTL     0x60
+#    define LCD_MADCTL     0xA0
 #  endif
 #endif
 
@@ -88,9 +88,7 @@
 #define LCD_DC_PIN         LCD_DC_Pin
 #define LCD_RST_PORT       LCD_RST_GPIO_Port
 #define LCD_RST_PIN        LCD_RST_Pin
-/*
-Nah we just give 3.3v to LED pin
 #define LCD_BL_PORT        LCD_BL_GPIO_Port
 #define LCD_BL_PIN         LCD_BL_Pin
-*/
+
 #endif /* LCD_CONFIG_H */

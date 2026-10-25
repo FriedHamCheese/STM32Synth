@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dma.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -32,6 +33,7 @@
 #include "mux_adc.h"
 #include "controls.h"
 #include "audio_out.h"
+#include "metronome.h"
 #include "sine_lookup.h"
 #include "adsr.h"
 #include "autoplay.h"
@@ -66,7 +68,8 @@ WaveformConfig waveform_config =
     .fall_pct   = 0.50f,
     .rise_shape = WAVE_SINE,
     .fall_shape = WAVE_SINE,
-    .max_output = 350.0f
+    .max_output = 350.0f,
+    .midpoint = 0.25f
 };
 
 VolumeOscillationParam volume_oscillator_param = {
@@ -90,10 +93,9 @@ static int8_t autoplay_song_index = autoplay_pause_index;
 AdsrParam adsr_param;
 
 VoiceManager voice_manager;
+MetronomeParam metronome;
 //Master volume can be from 0.0 to 10.0x, overdrive woo
 float master_volume = 1.0f;
-
-ui_data_t ui_data;
 #endif
 /* USER CODE END PV */
 
@@ -120,11 +122,17 @@ static void mock_update_keyframe(void);
 void main_runtime_iter(void)
 {
   static uint32_t last_poll = 0;
+  static uint32_t last_controls_poll = 0;
   uint32_t now = HAL_GetTick();
 
   #ifdef IS_MASTER
-  controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
-  controls_update_adsr(&adsr_param);
+  controls_poll_tap(&metronome, &volume_oscillator_param);
+  if(now - last_controls_poll >= 20){
+	  controls_update(&waveform_config, &volume_oscillator_param, &master_volume, &metronome);
+  	  controls_update_adsr(&adsr_param);
+  	  handle_autoplay_button_pressed(now);
+  	  last_controls_poll = now;
+  }
   #endif
   if (now - last_poll >= 20)
   {
@@ -141,10 +149,6 @@ void main_runtime_iter(void)
     #else
     #endif
   }
-  
-  #ifdef IS_MASTER
-  handle_autoplay_button_pressed(now);
-  #endif
 }
 
 /* USER CODE END 0 */
@@ -178,6 +182,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
@@ -191,7 +196,8 @@ int main(void)
   sine_lookup_init();
   adsr_set_params(&adsr_param, 0, 0, 1.0f, 0, AUDIO_SAMPLE_RATE_HZ);
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
-  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
+  metronome_init(&metronome);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume, &metronome);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -200,10 +206,17 @@ int main(void)
   set_audio_output_value(0, 0);
   mark_slaves_disconnected();
   boot_calibrate();
-  ui_init(&ui_data);
+  ui_init();
   #else
+  const uint32_t power_up_stabilise_ms = 100;
+  HAL_Delay(power_up_stabilise_ms);
   uint8_t slave_id_from_dip = read_slave_id_from_dip();
   init_slave(slave_id_from_dip);
+  //We rely on completed callback for self-calling and address changing, see request_slave_id_change()
+  HAL_I2C_Slave_Transmit_DMA(&hi2c1,
+                           (uint8_t *)&g_keyframe,
+                           sizeof(g_keyframe));
+  g_last_dma_complete_ms = HAL_GetTick();
   #endif
   
   #ifdef TEST_WITHOUT_SLAVE
@@ -213,51 +226,37 @@ int main(void)
   
   /* USER CODE END 2 */
 
-  #ifndef IS_MASTER
-  /*
-   * Give the board some time to have stable power rails for correct initial sensor readings,
-   * CPUs are fast yk
-   */
-  const uint16_t power_up_stablise_ms = 250;
-  HAL_Delay(power_up_stablise_ms);
-  #endif
-
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     #ifdef IS_MASTER
     update_ui_data();
-    ui_task(&ui_data);
+    ui_task();
     #else
     const uint8_t current_slave_id = read_slave_id_from_dip();
     if (current_slave_id != slave_id_from_dip) {
       slave_id_from_dip = current_slave_id;
-      init_slave(slave_id_from_dip);
-      continue;
+      request_slave_id_change(slave_id_from_dip);
     }
 
     update_keyframe();
 
-	/*
-	 * Having both to share the same bare-minimum timeout 1ms period
-	 * may introduce a condition where master and slave will always timeout due to mis-alignment.
-	 * Master uses the shorter 1ms value to reserve CPU time, while slave is less constrained.
-	 */
-    const uint32_t misalign_tolerance = 2;
-    const HAL_StatusTypeDef i2c_status = HAL_I2C_Slave_Transmit(&hi2c1,
-                           (uint8_t *)&g_keyframe,
-                           sizeof(g_keyframe),
-                           I2C_TIMEOUT_MS*misalign_tolerance);
-    volatile uint32_t i2c_err = HAL_I2C_GetError(&hi2c1);
-    if (i2c_status == HAL_BUSY ||
-        (i2c_err & HAL_I2C_ERROR_TIMEOUT) != 0U) {
-    	I2C1_Reset();
+    if ((HAL_GetTick() - g_last_dma_complete_ms) > DMA_FREEZE_TIMEOUT_MS) {
+      //Cannot rely on DMA completed callback to reset this, so will do manual DMA-bit disable
+      CLEAR_BIT(hi2c1.Instance->CR2, I2C_CR2_DMAEN);
+      I2C1_Reset();
+      HAL_I2C_Slave_Transmit_DMA(&hi2c1,
+                                 (uint8_t *)&g_keyframe,
+                                 sizeof(g_keyframe));
+      g_last_dma_complete_ms = HAL_GetTick();
       continue;
     }
-    if(i2c_err == 0){
-    	i2c_err = i2c_err;
-    }
+
+    const volatile HAL_DMA_StateTypeDef dma_state = HAL_DMA_GetState(hi2c1.hdmatx);
+    const volatile uint32_t dma_error = HAL_DMA_GetError(hi2c1.hdmatx);
+    volatile const I2C_HandleTypeDef ref = hi2c1;
+    if(dma_state);
     #endif
 
     /* USER CODE END WHILE */
@@ -404,34 +403,34 @@ static void update_ui_data(void)
   ui_data.wave_sample = waveform_get_point_as_amplitude;
   ui_data.rise_pct = waveform_config.rise_pct * 100.0f;
   ui_data.fall_pct = waveform_config.fall_pct * 100.0f;
+  
   ui_data.adsr_valid = true;
   ui_data.attack_s = ui_adsr_rate_to_seconds(adsr_param.attack_rate);
   ui_data.decay_s = ui_adsr_rate_to_seconds(adsr_param.decay_rate);
   ui_data.sustain = adsr_param.sustain_level;
   ui_data.release_s = ui_adsr_rate_to_seconds(adsr_param.release_rate);
+  
   ui_data.lfo_depth = volume_oscillator_param.strength;
   ui_data.lfo_hz = volume_oscillator_param.frequency;
+
+  ui_data.bpm_valid = true;
+  ui_data.bpm = metronome_get_bpm(&metronome);
+  ui_data.lfo_division = metronome.tap_active
+      ? vosc_beat_division_label(ui_data.bpm, volume_oscillator_param.frequency)
+      : NULL;
+
   ui_data.volume_valid = true;
   ui_data.volume = master_volume;
-  
-  /*
-  uiv2 provisions:
-  - currently has
-    if(autoplay_song_index == autoplay_pause_index) 
-      ui_data.autoplay_label = idk empty or manual play
-    else
-      ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index]
-  - highly likely to:
-    ui_data.wave_center_oscillate_hz = 0.0(off) to 20.0hz
-  - might:
-    ui_data.lowpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
-    ui_data.highpass_cutoff_hz = 0.0(off) to AUDIO_SAMPLE_RATE_HZ (yea idk)
-    only either will be on, or both off; they will use the same knob
+
+  if(autoplay_song_index == autoplay_pause_index) 
+    ui_data.autoplay_label = NULL;
+  else
+    ui_data.autoplay_label = autoplay_song_list.labels[autoplay_song_index];
+
+  ui_data.wave_center_pwm_valid = true;
+  ui_data.wave_center_pwm_pct = waveform_config.midpoint * 100.0f;
     
-    ui_data.filter_adsr_strength = 0.0 to 1.0
-    ui_data.filter_fixed_strength = 0.0 to 1.0
-    adsr and fixed strength shares same knob
-  */
+  ui_data.filter_valid = false;  
 }
 
 static void handle_autoplay_button_pressed(uint32_t now_ms)

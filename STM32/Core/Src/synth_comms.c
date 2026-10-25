@@ -120,8 +120,8 @@ void poll_slaves(void)
             const uint8_t was_disconnected =
                 g_slave_fail_attempts[s] >= SLAVE_FAIL_LIMIT;
             for (uint8_t k = 0; k < 12; k++){
-				g_keys[s][k] = s_frame.adc[k];
-			}
+                g_keys[s][k] = s_frame.adc[k];
+            }
             if (was_disconnected) {
                 for (uint8_t k = 0; k < 12; k++){
                     g_baseline[s][k] = s_frame.adc[k];
@@ -199,7 +199,10 @@ void stale_check(void)
 #include "mux_adc.h"
 
 volatile KeyFrame g_keyframe = {0};
-static uint8_t s_tx_buf[sizeof(KeyFrame)];
+volatile uint32_t g_last_dma_complete_ms = 0U;
+static KeyFrame s_dma_keyframe;
+static volatile uint8_t s_pending_slave_id;
+static volatile uint8_t s_slave_id_change_pending;
 
 uint8_t read_slave_id_from_dip(void)
 {
@@ -222,7 +225,16 @@ void init_slave(uint8_t slave_id)
     hi2c1.Init.OwnAddress1 = (uint32_t)((SLAVE_BASE_ADDR + slave_id) << 1);
     if (HAL_I2C_Init(&hi2c1) != HAL_OK)
         Error_Handler();
-    /* Blocking mock-slave test path: the main loop owns the transaction. */
+}
+
+void request_slave_id_change(uint8_t slave_id)
+{
+    /*
+    Reasoning behind request for slave octave /i2c address change is because of parallel DMA transfers.
+    We rely on the transfer completed callback to change the address since it guarantees no parallel i2c activity.
+    */
+    s_pending_slave_id = slave_id;
+    s_slave_id_change_pending = 1U;
 }
 
 void update_keyframe(void)
@@ -230,27 +242,31 @@ void update_keyframe(void)
     for (uint8_t k = 0; k < 12; k++)
         g_keyframe.adc[k] = (int16_t)(mux_read(k) - 2048);
 }
-/*
-void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c,
-                           uint8_t TransferDirection,
-                           uint16_t AddrMatchCode)
-{
-    (void)AddrMatchCode;
-    if (TransferDirection == I2C_DIRECTION_RECEIVE) {
-        memcpy(s_tx_buf, (const void *)&g_keyframe, sizeof(g_keyframe));
-        HAL_I2C_Slave_Transmit_IT(hi2c, s_tx_buf, sizeof(s_tx_buf));
-    }
-}
-
 void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-    HAL_I2C_EnableListen_IT(hi2c);
+    if (hi2c != &hi2c1)
+        return;
+
+    g_last_dma_complete_ms = HAL_GetTick();
+
+    if (s_slave_id_change_pending) {
+        const uint8_t new_slave_id = s_pending_slave_id;
+        s_slave_id_change_pending = 0U;
+        HAL_I2C_DeInit(&hi2c1);
+        hi2c1.Init.OwnAddress1 =
+            (uint32_t)((SLAVE_BASE_ADDR + new_slave_id) << 1);
+        if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+            Error_Handler();
+    }
+
+    memcpy(&s_dma_keyframe, (void*)&g_keyframe, sizeof(s_dma_keyframe));
+    HAL_I2C_Slave_Transmit_DMA(hi2c,
+                               (uint8_t *)&s_dma_keyframe,
+                               sizeof(s_dma_keyframe));
 }
 
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
     __HAL_I2C_CLEAR_FLAG(hi2c, I2C_FLAG_AF | I2C_FLAG_BERR | I2C_FLAG_ARLO | I2C_FLAG_OVR);
-    HAL_I2C_EnableListen_IT(hi2c);
 }
-*/
 #endif /* !IS_MASTER */
