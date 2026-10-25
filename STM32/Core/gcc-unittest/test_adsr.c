@@ -10,7 +10,7 @@
 
 //One step of slack for stage changes landing a sample early/late from float rounding
 #define ADSR_FLOAT_TEST_TOLERANCE 0.005f
-#define SAMPLES_PER_MS 48
+#define SAMPLES_PER_MS 12
 
 //Attack 10ms, decay 20ms, sustain 0.5, release 40ms
 static AdsrParam test_param;
@@ -19,7 +19,7 @@ static uint8_t float_within_tolerance(float val, float target){
   return fabs(val - target) <= ADSR_FLOAT_TEST_TOLERANCE;
 }
 
-//Runs the envelope like the 48kHz ISR does, returns the last volume
+//Runs the envelope like the 12kHz ISR does, returns the last volume
 static float run_samples(AdsrState *state, const AdsrParam *param, uint32_t samples){
   float volume = state->volume;
   for (uint32_t i = 0; i < samples; i++)
@@ -76,11 +76,10 @@ static void test_adsr_1ms_attack_ramps(){
   AdsrState state;
   adsr_init(&state);
 
-  //Shortest pot setting still ramps over 48 samples instead of jumping 0 -> 1 (click)
+  //Shortest pot setting still ramps over 12 samples instead of jumping 0 -> 1 (click)
   adsr_note_on(&state);
   assert(float_within_tolerance(run_samples(&state, &param, 1), 1.0f / SAMPLES_PER_MS));
-  assert(float_within_tolerance(run_samples(&state, &param, 23), 0.5f));
-  assert(float_within_tolerance(run_samples(&state, &param, 24), 1.0f));
+  assert(float_within_tolerance(run_samples(&state, &param, SAMPLES_PER_MS - 1), 1.0f));
 }
 
 static void test_adsr_release_before_sustain(){
@@ -110,8 +109,11 @@ static void test_adsr_retrigger_during_release(){
   assert(float_within_tolerance(run_ms(&state, &test_param, 20), 0.25f));
   //Attack ramps from 0.25 instead of jumping to 0
   adsr_note_on(&state);
-  assert(float_within_tolerance(run_samples(&state, &test_param, 1), 0.25f));
-  assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.75f));
+  assert(float_within_tolerance(
+    run_samples(&state, &test_param, 1),
+    0.25f + 1.0f / (10.0f * SAMPLES_PER_MS)));
+  assert(float_within_tolerance(
+    run_samples(&state, &test_param, 5 * SAMPLES_PER_MS - 1), 0.75f));
   //Reaches 1.0 after 2.5ms more, then 2.5ms of a 20ms decay to 0.5
   assert(float_within_tolerance(run_ms(&state, &test_param, 5), 0.9375f));
 }
@@ -211,7 +213,8 @@ static const WaveformConfig test_waveform = {
   .fall_pct = 0.5f,
   .rise_shape = WAVE_SINE,
   .fall_shape = WAVE_SINE,
-  .max_output = 350.0f
+  .max_output = 350.0f,
+  .midpoint = 0.5f
 };
 
 static void run_voice_manager_ms(VoiceManager *vm, uint32_t ms){
@@ -222,7 +225,7 @@ static void run_voice_manager_ms(VoiceManager *vm, uint32_t ms){
 static void test_adsr_voice_freed_after_release(){
   printf("\ttest_adsr_voice_freed_after_release()...\n");
   VoiceManager vm;
-  voice_manager_init(&vm, 48000, 48000, &test_param);
+  voice_manager_init(&vm, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &test_param);
 
   assert(voice_manager_note_on(&vm, 48, 127));
   run_voice_manager_ms(&vm, 100);
@@ -258,7 +261,7 @@ static void test_adsr_null_param_is_no_envelope(){
 
   //Voice manager without ADSR settings still plays notes instead of going silent
   VoiceManager vm;
-  voice_manager_init(&vm, 48000, 48000, 0);
+  voice_manager_init(&vm, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, 0);
   assert(voice_manager_note_on(&vm, 48, 127));
   uint8_t heard_sound = 0;
   for (int i = 0; i < 100; i++)

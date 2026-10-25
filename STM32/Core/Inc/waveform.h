@@ -31,10 +31,29 @@ typedef struct
     float midpoint;
 } WaveformConfig;
 
-wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config);
+/*
+ * Control-rate copy of WaveformConfig with divisions already resolved.
+ * Prepare once per sample, then call waveform_get_point_prepared() per voice.
+ */
+typedef struct
+{
+    float midpoint;
+    float rise;
+    float fall;
+    float fall_start;
+    float inv_midpoint;
+    float inv_trough_span;
+    float inv_rise;
+    float inv_fall;
+    uint8_t valid;
+} WaveformPrepared;
 
-wavegen_output_t get_sine_point(float phase, float max_output);
-wavegen_output_t get_triangle_point(float phase, float max_output);
-wavegen_output_t get_square_point(float phase, float max_output);
+void waveform_prepare(const WaveformConfig *config, WaveformPrepared *prepared);
+wavegen_output_t waveform_get_point_prepared(
+    float phase,
+    const WaveformConfig *config,
+    const WaveformPrepared *prepared
+);
+wavegen_output_t waveform_get_point(float phase, const WaveformConfig *config);
 
 #endif

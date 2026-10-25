@@ -188,6 +188,9 @@ static uint32_t  g_last_frame_ms;
 /* ---- header: autoplay song ---------------------------------------------- */
 typedef struct {
     bool manual;
+    bool bpm_valid;
+    uint16_t bpm;
+    const char *division;    /* note division while tempo-synced, else NULL */
     char title[HDR_LABEL_MAX + 1];
 } hdr_view_t;
 static hdr_view_t hdr_v;
@@ -204,6 +207,25 @@ static void paint_header(gfx_canvas_t *c, void *ctx)
     int16_t  tw     = gfx_text_width(tag, FONT_SMALL);
     gfx_rect(c, HDR_X + 2, HDR_Y + 2, tw + 8, HDR_H - 4, tcol);
     gfx_text(c, HDR_X + 6, HDR_Y + (HDR_H - 7) / 2, tag, FONT_SMALL, tcol);
+
+    /* tempo, right-aligned; the song name below reserves that width */
+    int16_t bpm_w = 0;
+    if (hdr_v.bpm_valid) {
+        char bpm_txt[20];
+        char *p = bpm_txt;
+        if (hdr_v.bpm >= 100) *p++ = (char)('0' + hdr_v.bpm / 100);
+        if (hdr_v.bpm >= 10)  *p++ = (char)('0' + (hdr_v.bpm / 10) % 10);
+        *p++ = (char)('0' + hdr_v.bpm % 10);
+        strcpy(p, " BPM");
+        if (hdr_v.division != NULL) {
+            strcat(bpm_txt, " ");
+            strcat(bpm_txt, hdr_v.division);
+        }
+        bpm_w = gfx_text_width(bpm_txt, FONT_SMALL);
+        gfx_text(c, HDR_X + HDR_W - 4 - bpm_w,
+                 HDR_Y + (HDR_H - 7) / 2, bpm_txt, FONT_SMALL, COL_ACCENT);
+    }
+
     if (hdr_v.manual) return;
 
     /* play triangle */
@@ -213,7 +235,8 @@ static void paint_header(gfx_canvas_t *c, void *ctx)
 
     /* song name, truncated with ".." to fit */
     int16_t x     = px + 10;
-    int     maxch = (HDR_X + HDR_W - 4 - x) / (6 * FONT_MED);
+    int     maxch = (HDR_X + HDR_W - 4 - (bpm_w > 0 ? bpm_w + 8 : 0) - x)
+                    / (6 * FONT_MED);
     char    buf[HDR_LABEL_MAX + 1];
     int     n     = (int)strlen(hdr_v.title);
     if (maxch > HDR_LABEL_MAX) maxch = HDR_LABEL_MAX;
@@ -229,6 +252,9 @@ static void paint_header(gfx_canvas_t *c, void *ctx)
 static void update_header(void)
 {
     memset(&hdr_v, 0, sizeof hdr_v);
+    hdr_v.bpm_valid = g_data.bpm_valid;
+    hdr_v.bpm = (uint16_t)(clampf(g_data.bpm, 0.0f, 999.0f) + 0.5f);
+    hdr_v.division = g_data.lfo_division;
     const char *s = g_data.autoplay_label;
     hdr_v.manual = (s == NULL || s[0] == '\0');
     if (!hdr_v.manual) {

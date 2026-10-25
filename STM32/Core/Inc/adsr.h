@@ -15,7 +15,7 @@
          A   D    S     R
         ^note_on   ^note_off
 
-  adsr_get_volume() is called once per audio sample by the 48kHz ISR and steps volume by one sample,
+  adsr_get_volume() is called once per audio sample by the 12kHz ISR and steps volume by one sample,
   so ramps are smooth at sample resolution and no clock is needed.
   Times are converted to per-sample steps once in adsr_set_params(), so the ISR only adds.
 

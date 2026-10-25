@@ -33,6 +33,7 @@
 #include "mux_adc.h"
 #include "controls.h"
 #include "audio_out.h"
+#include "metronome.h"
 #include "sine_lookup.h"
 #include "adsr.h"
 #include "autoplay.h"
@@ -92,6 +93,7 @@ static int8_t autoplay_song_index = autoplay_pause_index;
 AdsrParam adsr_param;
 
 VoiceManager voice_manager;
+MetronomeParam metronome;
 //Master volume can be from 0.0 to 10.0x, overdrive woo
 float master_volume = 1.0f;
 #endif
@@ -124,8 +126,9 @@ void main_runtime_iter(void)
   uint32_t now = HAL_GetTick();
 
   #ifdef IS_MASTER
+  controls_poll_tap(&metronome, &volume_oscillator_param);
   if(now - last_controls_poll >= 20){
-	  controls_update(&waveform_config, &volume_oscillator_param, &master_volume);
+	  controls_update(&waveform_config, &volume_oscillator_param, &master_volume, &metronome);
   	  controls_update_adsr(&adsr_param);
   	  handle_autoplay_button_pressed(now);
   	  last_controls_poll = now;
@@ -193,7 +196,8 @@ int main(void)
   sine_lookup_init();
   adsr_set_params(&adsr_param, 0, 0, 1.0f, 0, AUDIO_SAMPLE_RATE_HZ);
   voice_manager_init(&voice_manager, AUDIO_SAMPLE_RATE_HZ, AUDIO_SAMPLE_RATE_HZ, &adsr_param);
-  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume);
+  metronome_init(&metronome);
+  audio_out_init(&voice_manager, &waveform_config, &volume_oscillator_param, &master_volume, &metronome);
   controls_init();
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -408,7 +412,13 @@ static void update_ui_data(void)
   
   ui_data.lfo_depth = volume_oscillator_param.strength;
   ui_data.lfo_hz = volume_oscillator_param.frequency;
-  
+
+  ui_data.bpm_valid = true;
+  ui_data.bpm = metronome_get_bpm(&metronome);
+  ui_data.lfo_division = metronome.tap_active
+      ? vosc_beat_division_label(ui_data.bpm, volume_oscillator_param.frequency)
+      : NULL;
+
   ui_data.volume_valid = true;
   ui_data.volume = master_volume;
 
