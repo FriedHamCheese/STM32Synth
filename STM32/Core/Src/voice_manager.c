@@ -43,9 +43,6 @@ void voice_manager_init(
 uint8_t voice_manager_note_on(VoiceManager *manager, uint16_t key_id, uint16_t velocity)
 {
     const float max_velocity_recip = 1.0f/127.0f;
-    //Housing does not allow for reliable test, so dumb one for now
-    (void)velocity;
-    velocity = 127;
     uint8_t started = 0;
 
     if (manager == 0 ||

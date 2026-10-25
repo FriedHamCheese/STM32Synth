@@ -49,10 +49,10 @@ static KeyFrame s_frame;
 /* Fast press (10ms) → vel 127; slow press (200ms+) → vel 1 */
 int16_t map_velocity(uint32_t delta_ms)
 {
-    const uint32_t min_ms = 25;
-    const uint32_t max_ms = 500;
+    const uint32_t min_ms = 5;
+    const uint32_t max_ms = 100;
     const int16_t max_velocity = 127;
-    const int16_t min_velocity = 1;
+    const int16_t min_velocity = 62;
     
     if (delta_ms <= min_ms)  return max_velocity;
     if (delta_ms >= max_ms) return min_velocity;

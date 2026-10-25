@@ -23,12 +23,11 @@
 #define DMA_FREEZE_TIMEOUT_MS  50U
 #define SLAVE_BASE_ADDR   0x10   /* 7-bit base; HAL expects (addr << 1) at call site */
 #define I2C_TIMEOUT_MS    1
-#define PRESS_THRESHOLD   -300    /* signed ADC delta from baseline — tune per H3503 */
+#define PRESS_THRESHOLD   -900    /* signed ADC delta from baseline — tune per H3503 */
 #define STALE_TIMEOUT_MS  30
 #define MIDI_BASE_NOTE    48     /* C3 — key 0 on leftmost slave */
 
-//idfk man
-#define MOVE_THRESHOLD -150
+#define MOVE_THRESHOLD -600
 
 typedef enum { KEY_IDLE, KEY_PRESSED } KeyState;
 
