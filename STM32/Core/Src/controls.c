@@ -16,7 +16,6 @@
 #define FALL_MUX_CH         1
 #define WAVE_MIDPOINT_CH    6
 #define METRONOME_BPM_CH    7
-#define METRONOME_TAP_PIN   GPIO_PIN_5 /* SW4 */
 #define TAP_POT_DEADBAND    0.03f
 #define VOSC_FREQUENCY_CH   9
 #define VOSC_STRENGTH_CH    10
@@ -36,7 +35,8 @@ typedef struct {
 
 static DebouncedButton s_btn1 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
 static DebouncedButton s_btn2 = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
-static DebouncedButton s_tap_btn = { GPIO_PIN_SET, GPIO_PIN_SET, 0U };
+static DebouncedButton s_tap_btn = { GPIO_PIN_SET, GPIO_PIN_SET, 0U }; /* SW4 */
+static DebouncedButton s_metro_btn = { GPIO_PIN_SET, GPIO_PIN_SET, 0U }; /* SW5 */
 static uint8_t s_tap_was_active = 0;
 static float s_tap_pot_ref = 0.5f;
 
@@ -104,11 +104,21 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
         );
     }
     s_tap_was_active = metro->tap_active;
-    /* SW6 is the former ADSR mode switch; active-low input with pull-up. */
-    metronome_set_enabled(
-        metro,
-        HAL_GPIO_ReadPin(SW6_GPIO_Port, SW6_Pin) == GPIO_PIN_RESET
-    );
+    /* SW5 is a debounced active-low toggle for the metronome. */
+    {
+        const GPIO_PinState raw = HAL_GPIO_ReadPin(SW5_GPIO_Port, SW5_Pin);
+        const uint32_t now = HAL_GetTick();
+        if (raw != s_metro_btn.raw_state) {
+            s_metro_btn.raw_state = raw;
+            s_metro_btn.changed_at = now;
+        }
+        if ((raw != s_metro_btn.stable_state) &&
+            ((now - s_metro_btn.changed_at) >= BUTTON_DEBOUNCE_MS)) {
+            s_metro_btn.stable_state = raw;
+            if (raw == GPIO_PIN_RESET)
+                metronome_set_enabled(metro, !metro->enabled);
+        }
+    }
 
     vosc->frequency = metro->tap_active
         ? vosc_beat_sync_hz(metronome_get_bpm(metro), s_smoothed_vosc_frequency)
@@ -124,7 +134,7 @@ void controls_update(WaveformConfig *cfg, VolumeOscillationParam *vosc, float *m
 void controls_poll_tap(MetronomeParam *metro, VolumeOscillationParam *vosc)
 {
     const uint32_t now = HAL_GetTick();
-    const GPIO_PinState raw = HAL_GPIO_ReadPin(GPIOB, METRONOME_TAP_PIN);
+    const GPIO_PinState raw = HAL_GPIO_ReadPin(SW4_GPIO_Port, SW4_Pin);
 
     if (raw != s_tap_btn.raw_state) {
         s_tap_btn.raw_state = raw;
