@@ -71,6 +71,11 @@ void gfx_text_aligned(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w,
                       gfx_align_t align, const char *s, uint8_t scale,
                       uint16_t color);
 
+/* 2-bpp anti-aliased bitmap (e.g. the logo, see logo_bitmap.h), drawn in
+ * `color` and blended with the background at the edges. */
+void gfx_bitmap2(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int16_t h,
+                 const uint8_t *data, uint16_t color);
+
 /* Font table (font5x8.c): 5 column bytes per char, LSB = top row */
 extern const uint8_t gfx_font5x8[96][5];
 

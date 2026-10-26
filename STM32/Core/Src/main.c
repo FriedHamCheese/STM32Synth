@@ -205,8 +205,8 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim4);
   set_audio_output_value(0, 0);
   mark_slaves_disconnected();
+  ui_init();          /* boot screen first, so it shows during calibration */
   boot_calibrate();
-  ui_init();
   #else
   const uint32_t power_up_stabilise_ms = 100;
   HAL_Delay(power_up_stabilise_ms);
@@ -430,7 +430,15 @@ static void update_ui_data(void)
   ui_data.wave_center_pwm_valid = true;
   ui_data.wave_center_pwm_pct = waveform_config.midpoint * 100.0f;
     
-  ui_data.filter_valid = false;  
+  ui_data.filter_valid = false;
+
+  /* idle-screen activity the screen can't see by itself:
+     a key held down or the tap button pressed keeps the screen awake */
+  for (int sl = 0; sl < SLAVE_SLOTS; sl++)
+    for (int k = 0; k < 12; k++)
+      if (g_key_state[sl][k] == KEY_PRESSED) ui_notify_activity();
+  if (HAL_GPIO_ReadPin(SW4_GPIO_Port, SW4_Pin) == GPIO_PIN_RESET)
+    ui_notify_activity();  
 }
 
 static void handle_autoplay_button_pressed(uint32_t now_ms)
@@ -445,6 +453,7 @@ static void handle_autoplay_button_pressed(uint32_t now_ms)
 
     if (autoplay_button_pressed)
     {
+        ui_notify_activity();
         voice_manager_all_off(&voice_manager);
 
         autoplay_song_index++;

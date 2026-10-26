@@ -77,6 +77,10 @@ void ui_demo_update(ui_data_t *d)
     d->lfo_depth  = tri(t, 5000);
     d->lfo_hz     = 0.1f + 20.0f * tri(t, 15000);
 
+    d->bpm_valid    = true;
+    d->bpm          = 120.0f;
+    d->lfo_division = (t % 8000 < 4000) ? "1/8" : NULL;
+
     d->volume_valid = true;
     d->volume       = 2.5f * tri(t, 10000);  /* crosses 1.0 -> overdrive */
 

@@ -176,3 +176,35 @@ void gfx_text_aligned(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w,
     else if (align == ALIGN_RIGHT) x += w - tw;
     gfx_text(c, x, y, s, scale, color);
 }
+
+/* ---- 2-bit anti-aliased bitmap ------------------------------------------
+ * data: 2 bpp coverage (0 = transparent .. 3 = solid), row-major, rows padded
+ * to whole bytes, MSB first. Edge pixels are blended with what's already in
+ * the band, so the logo looks smooth on any background. */
+static uint16_t blend565(uint16_t bg, uint16_t fg, unsigned a /* 0..3 */)
+{
+    unsigned r = (((bg >> 11) & 31) * (3 - a) + ((fg >> 11) & 31) * a) / 3;
+    unsigned g = (((bg >> 5) & 63) * (3 - a) + ((fg >> 5) & 63) * a) / 3;
+    unsigned b = ((bg & 31) * (3 - a) + (fg & 31) * a) / 3;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+void gfx_bitmap2(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int16_t h,
+                 const uint8_t *data, uint16_t color)
+{
+    int16_t stride = (int16_t)((w + 3) / 4);
+    int16_t y0 = y < c->y ? c->y : y;
+    int16_t y1 = (y + h) < (c->y + c->h) ? (y + h) : (c->y + c->h);
+    for (int16_t yy = y0; yy < y1; yy++) {
+        const uint8_t *row = data + (yy - y) * stride;
+        for (int16_t i = 0; i < w; i++) {
+            int16_t xx = x + i;
+            if (xx < c->x || xx >= c->x + c->w) continue;
+            unsigned a = (row[i >> 2] >> (6 - 2 * (i & 3))) & 3;
+            if (!a) continue;
+            uint16_t *p = &c->buf[(yy - c->y) * c->w + (xx - c->x)];
+            uint16_t out = (a == 3) ? color : blend565(SWAP16(*p), color, a);
+            *p = SWAP16(out);
+        }
+    }
+}

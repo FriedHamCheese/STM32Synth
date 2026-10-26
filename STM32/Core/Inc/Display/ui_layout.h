@@ -42,6 +42,7 @@
 #define COL_BAR         RGB565(0x40, 0xA8, 0xFF)
 #define COL_OVERDRIVE   RGB565(0xFF, 0x20, 0x10)   /* red box               */
 #define COL_OD_TEXT     RGB565(0x00, 0x00, 0x00)   /* black text on red     */
+#define COL_LOGO        RGB565(0xFC, 0xD9, 0x79)   /* ORPHEUS logo yellow   */
 #define COL_LED_OFF     RGB565(0x30, 0x18, 0x00)
 
 /* ---- header: autoplay song ---------------------------------------------- */
@@ -105,5 +106,47 @@
 
 /* ---- timing ------------------------------------------------------------- */
 #define UI_FRAME_MS     33     /* ~30 fps max; only changed panels redraw   */
+
+/* ---- boot + idle screens ------------------------------------------------ */
+#define UI_PRODUCT_NAME "ORPHEUS"   /* text name; the logo itself is logo_bitmap.c */
+
+#ifndef UI_BOOT_MS
+#define UI_BOOT_MS        2000   /* boot screen time, counted from ui_init() */
+#endif
+#ifndef UI_IDLE_MS
+#define UI_IDLE_MS        15000  /* no activity this long -> idle screen     */
+#endif
+#define UI_IDLE_FRAME_MS  40     /* idle animation ~25 fps                   */
+
+/* ---- idle: what counts as a knob being turned --------------------------
+ * Movement is measured in knob travel (0..1). Pot noise must stay below
+ * UI_KNOB_DEADBAND; raise it if a noisy pot still keeps the screen awake,
+ * lower it if small turns don't wake the screen. */
+#define UI_KNOB_DEADBAND      0.04f  /* 4 % of the knob's travel             */
+#define UI_KNOB_HOLD_FRAMES   3      /* must stay moved ~0.1 s to count      */
+
+/* Knob ranges: copy of the firmware's audparam_ranges.h / controls.c */
+#define UI_KNOB_ADSR_MIN_MS     1.0f
+#define UI_KNOB_ATTACK_MAX_MS   2000.0f
+#define UI_KNOB_DECAY_MAX_MS    2000.0f
+#define UI_KNOB_RELEASE_MAX_MS  4000.0f
+#define UI_KNOB_LFO_MIN_HZ      0.1f
+#define UI_KNOB_LFO_MAX_HZ      30.0f
+#define UI_KNOB_VOL_CUTOFF      0.05f   /* pot below this = volume 0         */
+#define UI_KNOB_VOL_MID         1.0f    /* volume at half travel             */
+#define UI_KNOB_VOL_MAX         10.0f
+#define UI_KNOB_BPM_MIN         40.0f
+#define UI_KNOB_BPM_MAX         300.0f
+
+/* idle: DVD-style bouncing ORPHEUS logo, new colour per bounce */
+#define IDLE_SPEED_X    55       /* pixels per second                        */
+#define IDLE_SPEED_Y    40
+
+/* idle while autoplay is playing: "NOW PLAYING" + song + scrolling wave */
+#define UI_NP_FRAME_MS  80       /* ~12 fps: the wave band is a big redraw   */
+#define NP_WAVE_Y       66       /* scrolling wave band, full width          */
+#define NP_WAVE_H       116
+#define NP_PERIOD_W     160      /* pixels per wave period (2 on screen)     */
+#define NP_SCROLL_PXS   40       /* scroll speed, pixels per second          */
 
 #endif /* UI_LAYOUT_H */

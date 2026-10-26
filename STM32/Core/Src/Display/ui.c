@@ -25,6 +25,7 @@
 #include "ui_layout.h"
 #include "gfx.h"
 #include "lcd.h"
+#include "logo_bitmap.h"
 #include <string.h>
 #include <math.h>
 
@@ -711,16 +712,385 @@ static void update_out(void)
 }
 
 /* ======================================================================== */
+/*  activity detection                                                      */
+/* ======================================================================== */
+/*
+ * Knob movement is judged in KNOB SPACE: each value is converted back to the
+ * knob's physical position, 0.0 .. 1.0 of its travel, using the same curves
+ * as the firmware's controls.c (the ranges are in ui_layout.h, UI_KNOB_*).
+ * That way the ADSR knobs (exponential 1 ms .. 2-4 s), the volume knob
+ * (two-part curve up to 10x) and plain linear knobs are all judged the same.
+ *
+ * A knob counts as moved only when it is more than UI_KNOB_DEADBAND away
+ * from where it was at the last activity, for UI_KNOB_HOLD_FRAMES frames in
+ * a row (~0.1 s). Pot noise stays inside the band, and single noise spikes
+ * don't last long enough to count.
+ *
+ * While the LFO is tempo-synced (lfo_division set), the LFO rate jumps
+ * between note divisions, so a noisy rate knob sitting on a boundary could
+ * flip it back and forth. The rate isn't tracked in that mode.
+ */
+#define N_TRACK 13
+static float       track_ref[N_TRACK];
+static bool        track_on[N_TRACK];
+static uint8_t     g_move_frames;          /* consecutive frames outside band */
+static const char *ref_label;
+static volatile bool g_activity_flag;
+static uint32_t    g_last_activity_ms;
+
+static float knob_lin(float v, float lo, float hi)
+{
+    return clampf((v - lo) / (hi - lo), 0.0f, 1.0f);
+}
+
+/* controls.c pot_to_ms(): ms = MIN * (MAX/MIN)^pot  ->  pot = log(ms/MIN)/log(MAX/MIN) */
+static float knob_exp(float v, float lo, float hi)
+{
+    if (v <= lo) return 0.0f;
+    return clampf(logf(v / lo) / logf(hi / lo), 0.0f, 1.0f);
+}
+
+/* controls.c ratio_to_master_volume(): 0..5% off, 5..50% -> 0..MID, 50..100% -> MID..MAX */
+static float knob_volume(float v)
+{
+    if (v <= 0.0f) return UI_KNOB_VOL_CUTOFF;
+    if (v <= UI_KNOB_VOL_MID)
+        return UI_KNOB_VOL_CUTOFF + v / UI_KNOB_VOL_MID * (0.5f - UI_KNOB_VOL_CUTOFF);
+    return 0.5f + clampf((v - UI_KNOB_VOL_MID) / (UI_KNOB_VOL_MAX - UI_KNOB_VOL_MID), 0, 1) * 0.5f;
+}
+
+static void track_values(float v[N_TRACK], bool on[N_TRACK])
+{
+    bool synced = (g_data.lfo_division != NULL);
+    v[0]  = knob_lin(g_data.rise_pct, 0, 100);                          on[0]  = true;
+    v[1]  = knob_exp(g_data.attack_s  * 1000.0f, UI_KNOB_ADSR_MIN_MS, UI_KNOB_ATTACK_MAX_MS);
+    v[2]  = knob_exp(g_data.decay_s   * 1000.0f, UI_KNOB_ADSR_MIN_MS, UI_KNOB_DECAY_MAX_MS);
+    v[3]  = knob_lin(g_data.sustain, 0, 1);
+    v[4]  = knob_exp(g_data.release_s * 1000.0f, UI_KNOB_ADSR_MIN_MS, UI_KNOB_RELEASE_MAX_MS);
+    on[1] = on[2] = on[3] = on[4] = g_data.adsr_valid;
+    v[5]  = knob_lin(g_data.lfo_depth, 0, 1);                           on[5]  = true;
+    v[6]  = knob_lin(g_data.lfo_hz, UI_KNOB_LFO_MIN_HZ, UI_KNOB_LFO_MAX_HZ); on[6] = !synced;
+    v[7]  = knob_volume(g_data.volume);                                 on[7]  = g_data.volume_valid;
+    v[8]  = knob_lin(g_data.wave_center_pwm_pct, 0, 100);               on[8]  = g_data.wave_center_pwm_valid;
+    v[9]  = knob_lin(g_data.bpm, UI_KNOB_BPM_MIN, UI_KNOB_BPM_MAX);     on[9]  = g_data.bpm_valid && !synced;
+    v[10] = knob_exp(g_data.lowpass_cutoff_hz  + 20.0f, 20.0f, 20020.0f);
+    v[11] = knob_exp(g_data.highpass_cutoff_hz + 20.0f, 20.0f, 20020.0f);
+    v[12] = knob_lin(g_data.filter_adsr_strength, 0, 1);
+    on[10] = on[11] = on[12] = g_data.filter_valid;
+}
+
+void ui_notify_activity(void)
+{
+    g_activity_flag = true;
+}
+
+/* Take the current values as the new reference (no activity reported). */
+static void activity_rebase(uint32_t now)
+{
+    track_values(track_ref, track_on);
+    ref_label     = g_data.autoplay_label;
+    g_move_frames = 0;
+    g_last_activity_ms = now;
+}
+
+static bool autoplay_running(void)
+{
+    return g_data.autoplay_label != NULL && g_data.autoplay_label[0] != '\0';
+}
+
+/* true if something happened since the last call; updates the idle timer.
+ * label_counts: whether a change of autoplay song counts as activity (on the
+ * main screen yes; on the idle screen it just switches the idle view). */
+static bool activity_check(uint32_t now, bool label_counts)
+{
+    bool act = false;
+    if (g_activity_flag) { g_activity_flag = false; act = true; }
+
+    float v[N_TRACK];
+    bool  on[N_TRACK];
+    track_values(v, on);
+    bool moved = false;
+    for (int i = 0; i < N_TRACK; i++) {
+        if (on[i] != track_on[i]) { track_ref[i] = v[i]; track_on[i] = on[i]; }
+        else if (on[i] && fabsf(v[i] - track_ref[i]) > UI_KNOB_DEADBAND) moved = true;
+    }
+    if (moved) {
+        if (++g_move_frames >= UI_KNOB_HOLD_FRAMES) act = true;
+    } else {
+        g_move_frames = 0;
+    }
+    if (label_counts && g_data.autoplay_label != ref_label) act = true;
+    ref_label = g_data.autoplay_label;
+
+    if (act) activity_rebase(now);
+    return act;
+}
+
+/* ======================================================================== */
+/*  boot screen                                                             */
+/* ======================================================================== */
+
+/* Just the ORPHEUS logo, centred on black, for UI_BOOT_MS. Drawn once. */
+static uint32_t g_boot_start_ms;
+
+static void paint_boot(gfx_canvas_t *c, void *ctx)
+{
+    (void)ctx;
+    gfx_fill(c, COL_BG);
+    gfx_bitmap2(c, (LCD_WIDTH - LOGO_BOOT_W) / 2, (LCD_HEIGHT - LOGO_BOOT_H) / 2,
+                LOGO_BOOT_W, LOGO_BOOT_H, logo_boot, COL_LOGO);
+}
+
+/* ======================================================================== */
+/*  idle screen: DVD-style bouncing logo                                    */
+/* ======================================================================== */
+/*
+ * The ORPHEUS logo bitmap drifts diagonally and
+ * bounces off the screen edges, changing colour on every bounce.
+ * Each frame only the rectangle covering the old + new logo position is
+ * redrawn (~20 KB over SPI), so the rest of the black screen is never resent.
+ * Movement is time-based, so speed doesn't depend on the frame rate.
+ */
+static const uint16_t idle_colors[] = {
+    COL_LOGO,                   /* logo yellow */
+    RGB565(0xFF, 0x8C, 0x00),   /* orange  */
+    RGB565(0x40, 0xA8, 0xFF),   /* blue    */
+    RGB565(0x40, 0xE0, 0x70),   /* green   */
+    RGB565(0xFF, 0x50, 0xC0),   /* magenta */
+    RGB565(0xFF, 0xE0, 0x30),   /* yellow  */
+    RGB565(0x30, 0xE0, 0xE0),   /* cyan    */
+    RGB565(0xFF, 0xFF, 0xFF),   /* white   */
+};
+#define N_IDLE_COLORS (sizeof idle_colors / sizeof idle_colors[0])
+
+static int16_t  logo_w, logo_h;
+static float    logo_x, logo_y, logo_vx, logo_vy;
+static int16_t  logo_drawn_x, logo_drawn_y;   /* where it is on the glass */
+static uint8_t  logo_color;
+static uint32_t g_idle_last_ms;
+
+static void paint_logo(gfx_canvas_t *c, void *ctx)
+{
+    (void)ctx;
+    gfx_fill(c, COL_BG);
+    gfx_bitmap2(c, logo_drawn_x, logo_drawn_y, LOGO_IDLE_W, LOGO_IDLE_H,
+                logo_idle, idle_colors[logo_color]);
+}
+
+static void logo_enter(uint32_t now)
+{
+    logo_w = LOGO_IDLE_W;
+    logo_h = LOGO_IDLE_H;
+
+    /* start in the middle, heading down-right */
+    logo_x  = (LCD_WIDTH  - logo_w) / 2.0f;
+    logo_y  = (LCD_HEIGHT - logo_h) / 2.0f;
+    logo_vx = IDLE_SPEED_X;
+    logo_vy = IDLE_SPEED_Y;
+    logo_drawn_x = (int16_t)logo_x;
+    logo_drawn_y = (int16_t)logo_y;
+    g_idle_last_ms = now;
+
+    lcd_fill_screen(COL_BG);
+    gfx_render(logo_drawn_x, logo_drawn_y, logo_w, logo_h, paint_logo, NULL);
+}
+
+static void logo_animate(uint32_t now)
+{
+    float dt = (float)(now - g_idle_last_ms) / 1000.0f;
+    g_idle_last_ms = now;
+    if (dt > 0.2f) dt = 0.2f;                      /* after a long stall */
+
+    logo_x += logo_vx * dt;
+    logo_y += logo_vy * dt;
+
+    float max_x = (float)(LCD_WIDTH - logo_w), max_y = (float)(LCD_HEIGHT - logo_h);
+    bool bounced = false;
+    if (logo_x < 0)     { logo_x = -logo_x;            logo_vx = -logo_vx; bounced = true; }
+    if (logo_x > max_x) { logo_x = 2 * max_x - logo_x; logo_vx = -logo_vx; bounced = true; }
+    if (logo_y < 0)     { logo_y = -logo_y;            logo_vy = -logo_vy; bounced = true; }
+    if (logo_y > max_y) { logo_y = 2 * max_y - logo_y; logo_vy = -logo_vy; bounced = true; }
+    if (bounced) logo_color = (uint8_t)((logo_color + 1) % N_IDLE_COLORS);
+
+    int16_t nx = (int16_t)logo_x, ny = (int16_t)logo_y;
+    if (nx == logo_drawn_x && ny == logo_drawn_y && !bounced) return;
+
+    /* redraw the union of old and new position: erases the trail too */
+    int16_t dx = nx < logo_drawn_x ? nx : logo_drawn_x;
+    int16_t dy = ny < logo_drawn_y ? ny : logo_drawn_y;
+    int16_t dw = (int16_t)((nx > logo_drawn_x ? nx : logo_drawn_x) + logo_w - dx);
+    int16_t dh = (int16_t)((ny > logo_drawn_y ? ny : logo_drawn_y) + logo_h - dy);
+    logo_drawn_x = nx;
+    logo_drawn_y = ny;
+    gfx_render(dx, dy, dw, dh, paint_logo, NULL);
+}
+
+/* ======================================================================== */
+/*  idle screen while autoplay plays: NOW PLAYING + scrolling wave          */
+/* ======================================================================== */
+/*
+ * The current waveform is sampled once on entry into a table of one period
+ * and scrolls slowly across the screen; only the wave band is redrawn per
+ * frame. (The waveform can't change while idle: that would be knob activity
+ * and would wake the main screen.)
+ */
+#define NP_CY   (NP_WAVE_Y + NP_WAVE_H / 2)
+
+static int16_t  np_tab[NP_PERIOD_W];        /* screen y per column, 1 period */
+static uint32_t g_np_start_ms;
+static int16_t  g_np_offset;
+
+static void paint_np_wave(gfx_canvas_t *c, void *ctx)
+{
+    (void)ctx;
+    gfx_fill_rect(c, 0, NP_WAVE_Y, LCD_WIDTH, NP_WAVE_H, COL_BG);
+    gfx_hline_dotted(c, 0, NP_CY, LCD_WIDTH, 3, COL_GRID);
+    for (int16_t x = 0; x < LCD_WIDTH; x++) {
+        int16_t y = np_tab[(x + g_np_offset) % NP_PERIOD_W];
+        if (y < NP_CY) gfx_vline(c, x, y, NP_CY - y, COL_WAVE_FILL);
+        else           gfx_vline(c, x, NP_CY, y - NP_CY + 1, COL_WAVE_FILL);
+    }
+    for (int16_t x = 0; x < LCD_WIDTH; x++) {
+        int16_t y0 = np_tab[(x + g_np_offset) % NP_PERIOD_W];
+        int16_t y1 = np_tab[(x + 1 + g_np_offset) % NP_PERIOD_W];
+        int16_t top = y0 < y1 ? y0 : y1;
+        int16_t len = (y0 < y1 ? y1 - y0 : y0 - y1) + 1;
+        gfx_vline(c, x, top - 1, len + 1, COL_WAVE_LINE);
+        gfx_pixel(c, x, y0, COL_WAVE_CORE);
+    }
+}
+
+static void paint_np(gfx_canvas_t *c, void *ctx)
+{
+    gfx_fill(c, COL_BG);
+
+    /* "> NOW PLAYING" */
+    const char *tag = "NOW PLAYING";
+    int16_t tw = gfx_text_width(tag, FONT_SMALL);
+    int16_t tx = (LCD_WIDTH - tw + 10) / 2, ty = 12;
+    for (int k = 0; k < 4; k++)                      /* play triangle */
+        gfx_vline(c, tx - 10 + k, ty + k, 7 - 2 * k, COL_ACCENT);
+    gfx_text(c, tx, ty, tag, FONT_SMALL, COL_ACCENT);
+
+    /* song name: biggest size that fits, else truncated with ".." */
+    const char *song = g_data.autoplay_label ? g_data.autoplay_label : "";
+    char buf[HDR_LABEL_MAX + 1];
+    strncpy(buf, song, HDR_LABEL_MAX);
+    buf[HDR_LABEL_MAX] = '\0';
+    uint8_t sc = 3;
+    while (sc > 2 && gfx_text_width(buf, sc) > LCD_WIDTH - 16) sc--;
+    int maxch = (LCD_WIDTH - 16) / (6 * sc);
+    if ((int)strlen(buf) > maxch && maxch > 2) {
+        buf[maxch - 2] = '.'; buf[maxch - 1] = '.'; buf[maxch] = '\0';
+    }
+    int16_t sy = ty + 14 + (21 - gfx_text_height(sc)) / 2;
+    gfx_text_aligned(c, 0, sy, LCD_WIDTH, ALIGN_CENTER, buf, sc, COL_TEXT);
+
+    paint_np_wave(c, ctx);
+
+    /* BPM under the wave */
+    int16_t by = NP_WAVE_Y + NP_WAVE_H + 10;
+    if (g_data.bpm_valid) {
+        char b[24];
+        char *e = put_uint(b, (uint32_t)clampf(g_data.bpm + 0.5f, 0, 999));
+        strcpy(e, " BPM");
+        if (g_data.lfo_division) { strcat(b, "  "); strcat(b, g_data.lfo_division); }
+        gfx_text_aligned(c, 0, by, LCD_WIDTH, ALIGN_CENTER, b, FONT_MED, COL_ACCENT);
+    }
+    gfx_text_aligned(c, 0, LCD_HEIGHT - 12, LCD_WIDTH, ALIGN_CENTER,
+                     "PLAY A KEY OR TURN A KNOB", FONT_SMALL, COL_TEXT_OFF);
+}
+
+static void np_enter(uint32_t now)
+{
+    ui_wave_fn fn = g_data.wave_sample;
+    for (int i = 0; i < NP_PERIOD_W; i++) {
+        float v = fn ? clampf(fn((float)i / (float)NP_PERIOD_W), -1.0f, 1.0f) : 0.0f;
+        np_tab[i] = (int16_t)(NP_CY - v * (NP_WAVE_H / 2 - 4) + 0.5f);
+    }
+    g_np_start_ms = now;
+    g_np_offset = 0;
+    gfx_render(0, 0, LCD_WIDTH, LCD_HEIGHT, paint_np, NULL);
+}
+
+static void np_animate(uint32_t now)
+{
+    int16_t off = (int16_t)((now - g_np_start_ms) / 1000.0f * NP_SCROLL_PXS);
+    off %= NP_PERIOD_W;
+    if (off != g_np_offset) {
+        g_np_offset = off;
+        gfx_render(0, NP_WAVE_Y, LCD_WIDTH, NP_WAVE_H, paint_np_wave, NULL);
+    }
+}
+
+/* ======================================================================== */
+/*  idle dispatcher: which idle view to show                                */
+/* ======================================================================== */
+/*
+ * Autoplay playing  -> NOW PLAYING view.   Nothing playing -> bouncing logo.
+ * If autoplay starts/stops or the song changes while idle, the idle view
+ * switches over without waking the main screen.
+ */
+typedef enum { IDLE_LOGO, IDLE_NOW_PLAYING } idle_mode_t;
+static idle_mode_t g_idle_mode;
+static const char *g_idle_label;
+
+static void enter_idle(uint32_t now)
+{
+    g_idle_label = g_data.autoplay_label;
+    if (autoplay_running()) { g_idle_mode = IDLE_NOW_PLAYING; np_enter(now); }
+    else                    { g_idle_mode = IDLE_LOGO;        logo_enter(now); }
+}
+
+static void idle_animate(uint32_t now)
+{
+    if (g_data.autoplay_label != g_idle_label ||
+        autoplay_running() != (g_idle_mode == IDLE_NOW_PLAYING)) {
+        enter_idle(now);
+        return;
+    }
+    if (g_idle_mode == IDLE_NOW_PLAYING) np_animate(now);
+    else                                 logo_animate(now);
+}
+
+/* ======================================================================== */
+/*  main screen                                                             */
+/* ======================================================================== */
+
+static void main_update(void)
+{
+    update_header();
+    update_wave();
+    update_info();
+    update_env();
+    update_lfo();
+    update_led();
+    update_filter();
+    update_out();
+    g_force = false;
+}
+
+static void enter_main(void)
+{
+    lcd_fill_screen(COL_BG);
+    g_force = true;                      /* every panel repaints */
+    main_update();
+}
+
+/* ======================================================================== */
 /*  public API                                                              */
 /* ======================================================================== */
+
+typedef enum { SCR_BOOT, SCR_MAIN, SCR_IDLE } screen_t;
+static screen_t g_screen;
 
 void ui_init(void)
 {
     lcd_init();
-    lcd_fill_screen(COL_BG);
-    g_force = true;
-    g_last_frame_ms = ui_port_millis() - UI_FRAME_MS;
-    ui_task();
+    g_screen = SCR_BOOT;
+    g_boot_start_ms = ui_port_millis();
+    gfx_render(0, 0, LCD_WIDTH, LCD_HEIGHT, paint_boot, NULL);
+    g_last_frame_ms = g_boot_start_ms;
 }
 
 void ui_force_redraw(void)
@@ -731,19 +1101,48 @@ void ui_force_redraw(void)
 void ui_task(void)
 {
     uint32_t now = ui_port_millis();
-    if (!g_force && (uint32_t)(now - g_last_frame_ms) < UI_FRAME_MS) return;
+    uint32_t frame = UI_FRAME_MS;
+    if (g_screen == SCR_IDLE)
+        frame = (g_idle_mode == IDLE_NOW_PLAYING) ? UI_NP_FRAME_MS : UI_IDLE_FRAME_MS;
+    if (!g_force && (uint32_t)(now - g_last_frame_ms) < frame) return;
     g_last_frame_ms = now;
 
     g_data = ui_data;                    /* snapshot for this frame */
 
-    update_header();
-    update_wave();
-    update_info();
-    update_env();
-    update_lfo();
-    update_led();
-    update_filter();
-    update_out();
+    switch (g_screen) {
+    case SCR_BOOT:
+        if ((uint32_t)(now - g_boot_start_ms) >= UI_BOOT_MS) {
+            activity_rebase(now);        /* startup values aren't "activity" */
+            g_activity_flag = false;
+            g_screen = SCR_MAIN;
+            enter_main();
+        }
+        break;
 
-    g_force = false;
+    case SCR_MAIN:
+        activity_check(now, true);
+        if ((uint32_t)(now - g_last_activity_ms) >= UI_IDLE_MS) {
+            g_screen = SCR_IDLE;
+            enter_idle(now);
+        } else {
+            main_update();
+        }
+        break;
+
+    case SCR_IDLE:
+        if (activity_check(now, false)) {
+            g_screen = SCR_MAIN;
+            enter_main();
+        } else if (g_force) {
+            g_force = false;
+            enter_idle(now);
+        } else {
+            idle_animate(now);
+        }
+        break;
+    }
 }
+
+#ifdef UI_HOST_SIM
+int ui_debug_screen(void) { return (int)g_screen; }   /* sim tests only */
+#endif
