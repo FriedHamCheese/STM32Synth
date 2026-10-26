@@ -5,7 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 
-#define TEST_MAX_OUTPUT 350.0f
+#define TEST_MAX_OUTPUT 349.0f
 #define TEST_OUTPUT_TOLERANCE 1.0f
 
 /* Reference: waveform_get_point at 48319c4^ (before the optimization commit). */

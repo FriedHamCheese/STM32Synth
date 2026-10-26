@@ -199,13 +199,13 @@ static void test_adsr_knob_change_no_jump(){
 
 static void test_adsr_apply_volume(){
   printf("\ttest_adsr_apply_volume()...\n");
-  assert(float_within_tolerance(adsr_apply_volume(350, 1.0f), 175.0f));
-  assert(float_within_tolerance(adsr_apply_volume(350, 0.5f), 87.5f));
+  assert(float_within_tolerance(adsr_apply_volume(349, 1.0f), 174.0f));
+  assert(float_within_tolerance(adsr_apply_volume(349, 0.5f), 87.0f));
   assert(float_within_tolerance(adsr_apply_volume(0, 0.5f), -87.5f));
   assert(float_within_tolerance(adsr_apply_volume(175, 0.3f), 0.0f));
-  assert(float_within_tolerance(adsr_apply_volume(350, 0.0f), 0.0f));
+  assert(float_within_tolerance(adsr_apply_volume(349, 0.0f), 0.0f));
   //Small volumes keep their fraction instead of rounding to a whole step
-  assert(float_within_tolerance(adsr_apply_volume(350, 0.01f), 1.75f));
+  assert(float_within_tolerance(adsr_apply_volume(349, 0.01f), 1.74f));
 }
 
 static const WaveformConfig test_waveform = {
@@ -213,7 +213,7 @@ static const WaveformConfig test_waveform = {
   .fall_pct = 0.5f,
   .rise_shape = WAVE_SINE,
   .fall_shape = WAVE_SINE,
-  .max_output = 350.0f,
+  .max_output = 349.0f,
   .midpoint = 0.5f
 };
 

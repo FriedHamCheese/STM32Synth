@@ -3,7 +3,7 @@
 
 #define OUTPUT_MIDPOINT 175.0f
 #define OUTPUT_MIN 0.0f
-#define OUTPUT_MAX 350.0f
+#define OUTPUT_MAX 349.0f
 
 //note_on/note_off run in the main loop while get_sample runs in the 12kHz TIM4 ISR,
 //block the ISR while a voice is being changed so it never sees a half-written voice.

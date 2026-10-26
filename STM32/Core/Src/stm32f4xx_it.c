@@ -244,6 +244,10 @@ void TIM4_IRQHandler(void)
     audio_out_tick();
   }
   /* USER CODE END TIM4_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim4);
+  /* USER CODE BEGIN TIM4_IRQn 1 */
+
+  /* USER CODE END TIM4_IRQn 1 */
 }
 
 /**
