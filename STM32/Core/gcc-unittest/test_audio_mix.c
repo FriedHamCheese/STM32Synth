@@ -15,10 +15,10 @@ static void test_center_and_clamp(void)
     printf("\ttest_audio_mix_center_and_clamp()...\n");
 
     assert(near_float(audio_mix_sample(175.0f, 0.0f, 1.0f, 1.0f), 175.0f));
-    assert(near_float(audio_mix_sample(350.0f, 0.0f, 1.0f, 1.0f), 350.0f));
+    assert(near_float(audio_mix_sample(349.0f, 0.0f, 1.0f, 1.0f), 349.0f));
 
     /* Master volume > 1 must clamp before the uint16 conversion. */
-    assert(audio_mix_sample(175.0f, 97.0f, 10.0f, 1.0f) == 350.0f);
+    assert(audio_mix_sample(175.0f, 97.0f, 10.0f, 1.0f) == 349.0f);
     assert(audio_mix_sample(175.0f, -97.0f, 10.0f, 1.0f) == 0.0f);
 }
 
@@ -28,15 +28,15 @@ static void test_click_ignores_lfo(void)
 
     /* LFO at zero mutes voices but must not mute the metronome. */
     assert(near_float(
-        audio_mix_sample(350.0f, 50.0f, 1.0f, 0.0f), 225.0f));
+        audio_mix_sample(349.0f, 50.0f, 1.0f, 0.0f), 225.0f));
 
     /* Half-depth LFO: voice swings around center, click stays fixed. */
     assert(near_float(
-        audio_mix_sample(350.0f, 50.0f, 1.0f, 0.5f), 312.5f));
+        audio_mix_sample(349.0f, 50.0f, 1.0f, 0.5f), 312.0f));
 
     /* Master volume 0 mutes everything, including the click. */
     assert(near_float(
-        audio_mix_sample(350.0f, 97.0f, 0.0f, 1.0f), 175.0f));
+        audio_mix_sample(349.0f, 97.0f, 0.0f, 1.0f), 175.0f));
 }
 
 static void test_dc_block(void)
@@ -73,7 +73,7 @@ static void test_midpoint_dc_removed(void)
         .fall_pct = 0.5f,
         .rise_shape = WAVE_SINE,
         .fall_shape = WAVE_SINE,
-        .max_output = 350.0f,
+        .max_output = 349.0f,
         .midpoint = 0.001f
     };
 

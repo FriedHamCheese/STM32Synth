@@ -12,7 +12,7 @@
 
 /* TIM2 PWM period; keep the mixed sample inside the compare range. */
 #define AUDIO_OUTPUT_MIN 0.0f
-#define AUDIO_OUTPUT_MAX 350.0f
+#define AUDIO_OUTPUT_MAX 349.0f
 
 /*
  * Voice and click are centered amplitudes. The click follows master volume

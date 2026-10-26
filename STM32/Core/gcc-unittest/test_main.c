@@ -33,7 +33,7 @@ static void write_waveform_csv(void)
     .fall_pct = 0.50f,
     .rise_shape = WAVE_SINE,
     .fall_shape = WAVE_SINE,
-    .max_output = 350.0f,
+    .max_output = 349.0f,
     .midpoint = 0.50f
   };
 
@@ -95,7 +95,7 @@ static void run_benchmark(void)
     .fall_pct = 0.50f,
     .rise_shape = WAVE_SINE,
     .fall_shape = WAVE_SINE,
-    .max_output = 350.0f,
+    .max_output = 349.0f,
     .midpoint = 0.50f
   };
 
